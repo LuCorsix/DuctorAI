@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ductor AI - Entrar</title>
+    
+    <link rel="icon" type="image/png" href="DuctorAiLogo.png">
+    
+    <link rel="stylesheet" href="login.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+
+    <div class="login-container">
+        <div class="login-box form-wrapper active" id="box-login">
+            <h2>Bem-vindo! 🧠</h2>
+            <p>Faça login para acessar a Ductor AI</p>
+            
+            <form id="form-login">
+                <div class="input-group">
+                    <label><i class="fa-solid fa-envelope"></i> E-mail</label>
+                    <input type="email" placeholder="Digite seu e-mail" required autocomplete="username">
+                </div>
+                <div class="input-group" style="margin-bottom: 15px;">
+                    <label for="login-password" style="display: block; margin-bottom: 5px; color: #fff;">Senha</label>
+    
+                    <div class="password-container" style="position: relative; width: 100%; display: flex; align-items: center;">
+        
+                        <input type="password" id="login-password" placeholder="Digite sua senha" required 
+                               style="width: 100%; padding-right: 40px; box-sizing: border-box;">
+        
+                        <i class="fa-solid fa-eye" id="toggle-password" 
+                           style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #94a3b8; z-index: 10; font-size: 1.1rem;"></i>
+                    </div>
+                </div>
+                <button type="submit" class="btn-submit">Entrar</button>
+            </form>
+
+            <div class="form-footer">
+                <p>Não tem uma conta? <a href="#" id="go-to-register">Cadastre-se</a></p>
+                <p><a href="#" id="go-to-recover">Esqueceu sua senha?</a></p>
+            </div>
+        </div>
+
+        <div class="login-box form-wrapper" id="box-register">
+            <h2>Criar Conta ✨</h2>
+            <p>Cadastre-se para começar seus estudos</p>
+            
+            <form id="form-cadastro">
+                <div class="input-group">
+                    <label><i class="fa-solid fa-user"></i> Nome Completo</label>
+                    <input type="text" placeholder="Ex: João Silva" required autocomplete="name">
+                </div>
+                <div class="input-group">
+                    <label><i class="fa-solid fa-envelope"></i> E-mail</label>
+                    <input type="email" placeholder="Ex: joao@escola.com" required autocomplete="email">
+                </div>
+                <div class="input-group">
+                    <label><i class="fa-solid fa-lock"></i> Senha</label>
+                    <input type="password" placeholder="Crie uma senha segura" required autocomplete="new-password">
+                </div>
+                <button type="submit" class="btn-submit">Criar Conta</button>
+            </form>
+
+            <div class="form-footer">
+                <p>Já tem uma conta? <a href="#" class="go-to-login">Fazer Login</a></p>
+            </div>
+        </div>
+
+        <div class="login-box form-wrapper" id="box-recover">
+            <h2>Recuperar Senha 🔑</h2>
+            <p>Insira seu e-mail e a nova senha que deseja definir</p>
+            
+            <form id="form-recuperar">
+                <div class="input-group">
+                    <label><i class="fa-solid fa-envelope"></i> E-mail Cadastrado</label>
+                    <input type="email" placeholder="Digite seu e-mail" required>
+                </div>
+
+                <div class="input-group">
+                    <label><i class="fa-solid fa-lock"></i> Nova Senha</label>
+                    <input type="password" placeholder="Digite sua nova senha" required>
+                </div>
+
+                <button type="submit" class="btn-submit">Redefinir Senha</button>
+            </form>
+
+            <div class="form-footer">
+                <p>Lembrou a senha? <a href="#" class="go-to-login">Voltar para o Login</a></p>
+            </div>
+        </div>
+    </div>
+
+    <script src="login.js"></script>
+</body>
+</html>

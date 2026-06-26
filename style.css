@@ -1,0 +1,638 @@
+:root {
+    /* Tema Escuro Absoluto (Padrão) */
+    --bg-sidebar: #0b0f17;
+    --bg-chat: #1e293b;
+    --bg-message-ia: #0f172a;
+    --bg-message-user: #2563eb;
+    --bg-input: #0f172a;
+    --border: #334155;
+    
+    /* Cores de texto e destaques */
+    --text-main: #f8fafc;
+    --text-muted: #94a3b8;
+    --text-history-active: #60a5fa;
+    
+    /* Botões e Status */
+    --primary: #3b82f6;
+    --primary-hover: #1d4ed8;
+    --danger: #ef4444;
+    --danger-hover: #dc2626;
+}
+
+/* ☀️ MODO CLARO SUAVE (Cinza Conforto - Anti-fome de luz) */
+body.light-theme {
+    --bg-chat: #eaf0f6;
+    --bg-sidebar: #d9e2ec;
+    --bg-message-ia: #ffffff;
+    --bg-message-user: #104eb1;
+    --bg-input: #ffffff;
+    --border: #bcccdc;
+    --text-main: #102a43;
+    --text-muted: #486581;
+    --text-history-active: #104eb1;
+}
+
+/* Ajustes visuais exclusivos do Modo Claro Suave */
+body.light-theme .history-item { 
+    background: rgba(0, 0, 0, 0.04); 
+    color: var(--text-muted); 
+}
+
+body.light-theme .history-item:hover { 
+    background: rgba(0, 0, 0, 0.08); 
+    color: var(--text-main); 
+}
+
+body.light-theme .history-item.active {
+    background: rgba(16, 78, 177, 0.12);
+    border-color: rgba(16, 78, 177, 0.3);
+}
+
+body.light-theme .user-profile-box { 
+    background: rgba(0, 0, 0, 0.05); 
+    border-color: var(--border);
+}
+
+body.light-theme .action-btn { 
+    background: #ffffff; 
+    color: var(--text-muted);
+}
+
+body.light-theme .action-btn:hover { 
+    color: var(--text-main);
+    background: #f0f4f8;
+}
+
+body.light-theme .sidebar-header #new-chat-btn { 
+    background: #ffffff; 
+    color: var(--text-main);
+}
+
+body.light-theme .sidebar-header #new-chat-btn:hover { 
+    background: var(--primary);
+    color: white;
+}
+
+body.light-theme .chat-header {
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+body.light-theme .ia-message {
+    border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+
+/* 🔍 REGRAS ACESSIBILIDADE DE FONTE GRANDE */
+body.font-large .message {
+    font-size: 1.3rem !important;
+}
+
+body.font-large #user-input {
+    font-size: 1.3rem !important;
+}
+
+
+/* --- RESET PADRÃO --- */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+    background-color: var(--bg-chat);
+    color: var(--text-main);
+    height: 100vh;
+    overflow: hidden;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+/* CONTAINER PRINCIPAL */
+.app-container {
+    display: flex;
+    width: 100vw;
+    height: 100vh;
+}
+
+
+/* --- BARRA LATERAL (SIDEBAR ESQUERDA) --- */
+.sidebar {
+    width: 300px;
+    min-width: 300px;
+    background-color: var(--bg-sidebar);
+    border-right: 2px solid #00000010;
+    display: flex;
+    flex-direction: column;
+    padding: 20px 15px;
+    z-index: 10;
+    transition: background-color 0.2s;
+}
+
+/* Botão Novo Chat */
+.sidebar-header #new-chat-btn {
+    width: 100%;
+    padding: 14px;
+    background: var(--bg-chat);
+    border: 1px solid var(--border);
+    color: var(--text-main);
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    transition: all 0.2s;
+}
+
+/* Seção do Histórico */
+.sidebar-history {
+    flex: 1;
+    margin-top: 30px;
+    overflow-y: auto;
+}
+
+.sidebar-history h3 {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    margin-bottom: 15px;
+    padding-left: 5px;
+}
+
+#chat-history-list {
+    list-style: none;
+}
+
+/* Opções de Chats Anteriores */
+.history-item {
+    padding: 12px 15px;
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.9rem;
+    margin-bottom: 8px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid transparent;
+    transition: all 0.2s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.history-item i {
+    font-size: 1rem;
+}
+
+.history-item:hover {
+    background: rgba(255, 255, 255, 0.07);
+    color: var(--text-main);
+    border-color: var(--border);
+}
+
+.history-item.active {
+    background: rgba(59, 130, 246, 0.15);
+    color: var(--text-history-active);
+    border-color: rgba(59, 130, 246, 0.4);
+    font-weight: 600;
+}
+
+/* Rodapé da Sidebar (Perfil e Ações do Aluno) */
+.sidebar-footer {
+    border-top: 1px solid var(--border);
+    padding-top: 15px;
+    margin-top: 15px;
+}
+
+.user-profile-box {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+}
+
+.user-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.user-avatar {
+    width: 38px;
+    height: 38px;
+    background: var(--border);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+}
+
+.user-details span {
+    font-weight: 600;
+    font-size: 0.9rem;
+    display: block;
+}
+
+.user-details small {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.user-actions-row {
+    display: flex;
+    gap: 4px;
+}
+
+.action-btn {
+    flex: 1;
+    background: var(--bg-sidebar);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 8px 2px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    transition: all 0.2s;
+}
+
+.action-btn:hover {
+    color: var(--text-main);
+    border-color: var(--text-muted);
+    background: var(--bg-chat);
+}
+
+.action-btn.danger:hover {
+    color: white;
+    background: var(--danger);
+    border-color: var(--danger);
+}
+
+
+/* --- ÁREA DO CHAT PRINCIPAL (DIREITA) --- */
+.chat-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--bg-chat);
+    transition: background-color 0.2s;
+}
+
+.chat-header {
+    padding: 20px;
+    background-color: rgba(15, 23, 42, 0.2);
+    border-bottom: 1px solid var(--border);
+    text-align: center;
+}
+
+.chat-header h2 {
+    font-size: 1.4rem;
+}
+
+.chat-header p {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin-top: 4px;
+}
+
+.chat-messages {
+    flex: 1;
+    padding: 30px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.message {
+    max-width: 70%;
+    padding: 15px 20px;
+    line-height: 1.6;
+    font-size: 1rem;
+    word-wrap: break-word;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    transition: font-size 0.2s;
+}
+
+.ia-message {
+    background-color: var(--bg-message-ia);
+    color: var(--text-main);
+    align-self: flex-start;
+    border-radius: 0px 16px 16px 16px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.user-message {
+    background-color: var(--bg-message-user);
+    color: white;
+    align-self: flex-end;
+    border-radius: 16px 0px 16px 16px;
+}
+
+.chat-input-area {
+    padding: 20px 40px 30px 40px;
+}
+
+#chat-form {
+    display: flex;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 10px 16px;
+    align-items: center;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+}
+
+#user-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text-main);
+    padding: 8px;
+    font-size: 1rem;
+    transition: font-size 0.2s;
+}
+
+#user-input:focus {
+    outline: none;
+}
+
+#send-btn {
+    background: var(--primary);
+    color: white;
+    border: none;
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+
+/* --- MODAIS FLUTUANTES --- */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 999;
+}
+
+.modal-overlay.open {
+    display: flex;
+}
+
+.modal-box {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    width: 100%;
+    max-width: 420px;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    animation: scaleUp 0.2s ease-out;
+}
+
+@keyframes scaleUp {
+    from {
+        transform: scale(0.95);
+        opacity: 0;
+    }
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.modal-header {
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-sidebar);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h3 {
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.close-modal-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.8rem;
+    cursor: pointer;
+}
+
+.close-modal-btn:hover {
+    color: var(--text-main);
+}
+
+.modal-body {
+    padding: 24px;
+}
+
+.config-group {
+    margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.config-group label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.config-group select {
+    background: var(--bg-sidebar);
+    border: 1px solid var(--border);
+    color: var(--text-main);
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    outline: none;
+}
+
+.toggle-mock {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg-sidebar);
+    padding: 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    font-size: 0.95rem;
+}
+
+.status-indicator {
+    width: 10px;
+    height: 10px;
+    background: #22c55e;
+    border-radius: 50%;
+    box-shadow: 0 0 10px #22c55e;
+}
+
+/* Painel de Perfil */
+.profile-center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.profile-big-avatar {
+    width: 80px;
+    height: 80px;
+    background: var(--border);
+    font-size: 2.5rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 15px;
+}
+
+.profile-role {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin-bottom: 25px;
+}
+
+.profile-stats {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+}
+
+.stat-card {
+    flex: 1;
+    background: var(--bg-sidebar);
+    border: 1px solid var(--border);
+    padding: 14px;
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.stat-card span {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.stat-card strong {
+    font-size: 0.95rem;
+}
+
+/* ==========================================
+   NOVO LOGO PREMIUM DA DUCTOR AI
+   ========================================== */
+.brand-logo-emblem {
+    width: 75px;
+    height: 75px;
+    object-fit: contain;
+    mix-blend-mode: screen; /* Remove o fundo preto da imagem e deixa só as linhas iluminadas */
+    opacity: 0.95;
+    transition: transform 0.3s ease;
+}
+
+.brand-logo-emblem:hover {
+    transform: scale(1.05); /* Faz o logo dar um leve pulinho ao passar o rato */
+}
+
+/* ==========================================
+   CONFIGURAÇÃO DA LOGO DA DUCTOR AI
+   ========================================== */
+.brand-logo-emblem {
+    width: 75px;
+    height: 75px;
+    object-fit: contain;
+    mix-blend-mode: screen; /* Faz o fundo preto sumir no painel escuro */
+    opacity: 0.95;
+    transition: transform 0.3s ease;
+}
+
+.brand-logo-emblem:hover {
+    transform: scale(1.05); /* Efeito dinâmico ao passar o mouse */
+}
+
+.ai-mode-selector {
+    user-select: none;
+}
+
+.mode-pill {
+    background-color: rgba(30, 41, 59, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+}
+
+.mode-pill:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #f8fafc;
+}
+
+/* Quando o Modo Acadêmico estiver ativo (Fica Azul) */
+#mode-academic.active {
+    background-color: rgba(59, 130, 246, 0.15);
+    border-color: #3b82f6;
+    color: #60a5fa;
+    box-shadow: 0 0 10px rgba(59, 130, 246, 0.2);
+}
+
+/* Quando o Modo Emocional estiver ativo (Fica Verde) */
+#mode-emotional.active {
+    background-color: rgba(16, 185, 129, 0.15);
+    border-color: #10b981;
+    color: #34d399;
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+}
+
+/* ==========================================
+   ESTILIZAÇÃO DO OLHINHO DA SENHA
+   ========================================== */
+.password-container i {
+    position: absolute;
+    right: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: pointer;
+    color: #94a3b8; /* Cor cinza sutil combinando com o painel */
+    font-size: 1.1rem;
+    transition: color 0.2s ease;
+}
+
+/* Deixa o olhinho mais aceso quando o usuário passa o mouse por cima */
+.password-container i:hover {
+    color: #f8fafc; 
+}

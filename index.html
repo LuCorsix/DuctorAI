@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ductor AI - Área do Aluno</title>
+    
+    <link rel="icon" type="image/png" href="DuctorAiLogo.png">
+    
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+
+    <div class="app-container">
+        
+        <!-- BARRA LATERAL (SIDEBAR NA ESQUERDA) -->
+        <aside class="sidebar">
+            <!-- Cabeçalho com botão de Novo Chat -->
+            <div class="sidebar-header">
+                <button id="new-chat-btn"><i class="fa-solid fa-plus"></i> Novo Chat</button>
+            </div>
+            
+            <!-- Histórico de Conversas Dinâmico -->
+            <div class="sidebar-history">
+                <h3>Histórico de Conversas</h3>
+                <ul id="chat-history-list"></ul>
+            </div>
+
+            <!-- Rodapé da Sidebar: Perfil do Usuário e Ações -->
+            <div class="sidebar-footer">
+                <div class="user-profile-box">
+                    <div class="user-info">
+                        <div class="user-avatar" id="profile-avatar">👤</div>
+                        <div class="user-details">
+                            <span id="user-display-name"><i class="fa-solid fa-circle-notch fa-spin"></i> Conectando...</span>
+                            <small id="user-role-badge">Painel do Aluno</small>
+                        </div>
+                    </div>
+                    
+                    <!-- Linha de Botões de Controle de Conta -->
+                    <div class="user-actions-row">
+                        <button id="profile-btn" class="action-btn" title="Visualizar Meu Perfil">
+                            <i class="fa-solid fa-user-gear"></i> Perfil
+                        </button>
+                        <button id="settings-btn" class="action-btn" title="Configurações do Sistema">
+                            <i class="fa-solid fa-gear"></i> Opções
+                        </button>
+                        <button id="logout-btn" class="action-btn danger" title="Sair da Conta">
+                            <i class="fa-solid fa-right-from-bracket"></i> Sair
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- ÁREA PRINCIPAL DO CHAT (DIREITA) -->
+        <main class="chat-container">
+            <header class="chat-header">
+                <div class="header-title" style="display: flex; flex-direction: column; align-items: center; text-align: center; width: 100%;">
+                    <img src="DuctorAiLogo.png" alt="Ductor AI Logo" class="brand-logo-emblem" style="margin-bottom: -5px;">
+    
+                    <h2 style="margin: 0; padding: 0; font-size: 1.8rem;">Ductor AI</h2>
+                    <p style="margin: 6px 0 0 0; color: var(--text-muted);">Sua mentora de estudos anti-plágio e suporte emocional</p>
+                </div>
+            </header>
+
+            <!-- Caixa de Mensagens (Início Neutro e Amigável) -->
+            <div class="chat-messages" id="chat-messages">
+                <div class="message ia-message">
+                    Olá! Eu sou a Ductor AI. Estou aqui para te apoiar na sua jornada de estudos e na sua organização. Como está sendo o seu dia? O que gostaria de explorar ou conversar hoje?
+                </div>
+            </div>
+
+            <!-- Entrada de Texto -->
+            <footer class="chat-input-area">
+                <form id="chat-form">
+                    <div class="ai-mode-selector" style="display: flex; gap: 10px; margin-bottom: 10px; padding: 0 5px; width: 100%;">
+                        <button type="button" class="mode-pill active" id="mode-academic" onclick="selectAiMode('academic')">
+                            <i class="fa-solid fa-graduation-cap"></i> Rigor Acadêmico
+                        </button>
+                        <button type="button" class="mode-pill" id="mode-emotional" onclick="selectAiMode('emotional')">
+                            <i class="fa-solid fa-heart-pulse"></i> Suporte Emocional
+                        </button>
+                        <input type="hidden" id="current-ai-mode" value="academic">
+                    </div>
+                    <input type="text" id="user-input" placeholder="Digite sua dúvida ou desabafo aqui..." required autocomplete="off">
+                    <button type="submit" id="send-btn"><i class="fa-solid fa-paper-plane"></i></button>
+                </form>
+            </footer>
+        </main>
+
+    </div>
+
+    <!-- WINDOW MODAL: CONFIGURAÇÕES -->
+    <div class="modal-overlay" id="settings-modal">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-gear"></i> Configurações do Sistema</h3>
+                <button class="close-modal-btn" id="close-settings-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="config-group">
+                    <label>Tema do Painel</label>
+                    <select id="theme-selector">
+                        <option value="dark">Escuro Absoluto (Padrão)</option>
+                        <option value="light">Modo Claro</option>
+                    </select>
+                </div>
+                <div class="config-group">
+                    <label>Tamanho da Fonte do Chat</label>
+                    <select id="font-size-selector">
+                        <option value="normal">Normal</option>
+                        <option value="large">Grande (Acessibilidade)</option>
+                    </select>
+                </div>
+                <div class="config-group">
+                    <label>Respostas Pedagógicas</label>
+                    <div class="toggle-mock">
+                        <span>Modo Anti-Plágio Rígido Ativo</span>
+                        <div class="status-indicator active"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- WINDOW MODAL: PERFIL DO USUÁRIO -->
+    <div class="modal-overlay" id="profile-modal">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-id-card"></i> Perfil do Estudante</h3>
+                <button class="close-modal-btn" id="close-profile-btn">&times;</button>
+            </div>
+            <div class="modal-body profile-center">
+                <div class="modal-body profile-center">
+                    <div class="profile-big-avatar" id="modal-profile-avatar" style="cursor: pointer; position: relative; overflow: hidden;" title="Clique para alterar sua foto">👤</div>
+    
+                    <input type="file" id="avatar-upload-input" accept="image/*" style="display: none;">
+    
+                    <small style="color: var(--text-muted); cursor: pointer; display: block; margin-top: 5px; margin-bottom: 15px;" id="change-photo-text"><i class="fa-solid fa-camera"></i> Clique na foto para alterar</small>
+    
+                    <h4 id="modal-profile-name">Nome do Aluno</h4>
+                    <p class="profile-role">Estudante Técnico - Ensino Médio</p>
+                <div class="profile-stats">
+                    <div class="stat-card">
+                        <span>Status da Conta</span>
+                        <strong>Ativo</strong>
+                    </div>
+                    <div class="stat-card">
+                        <span>Segurança</span>
+                        <strong>Criptografada (Bcrypt)</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
