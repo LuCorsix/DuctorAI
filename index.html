@@ -1,123 +1,132 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" data-title-key="app.title">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Ductor AI: mentora de estudos anti-plágio e suporte emocional para estudantes.">
+    <meta name="theme-color" content="#0b0f17">
     <title>Ductor AI - Área do Aluno</title>
-    
+
     <link rel="icon" type="image/png" href="DuctorAiLogo.png">
-    
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="config.js"></script>
+    <script src="i18n.js"></script>
 </head>
 <body>
 
     <div class="app-container">
-        
-        <!-- BARRA LATERAL (SIDEBAR NA ESQUERDA) -->
-        <aside class="sidebar">
-            <!-- Cabeçalho com botão de Novo Chat -->
+
+        <!-- Fundo escuro atrás do menu no celular -->
+        <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+        <!-- BARRA LATERAL -->
+        <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                <button id="new-chat-btn"><i class="fa-solid fa-plus"></i> Novo Chat</button>
-            </div>
-            
-            <!-- Histórico de Conversas Dinâmico -->
-            <div class="sidebar-history">
-                <h3>Histórico de Conversas</h3>
-                <ul id="chat-history-list"></ul>
+                <button id="new-chat-btn" type="button"><i class="fa-solid fa-plus"></i> <span data-i18n="sidebar.new">Novo Chat</span></button>
             </div>
 
-            <!-- Rodapé da Sidebar: Perfil do Usuário e Ações -->
+            <nav class="sidebar-history" aria-label="Chats">
+                <h3 data-i18n="sidebar.history">Histórico de Conversas</h3>
+                <ul id="chat-history-list"></ul>
+            </nav>
+
             <div class="sidebar-footer">
                 <div class="user-profile-box">
                     <div class="user-info">
                         <div class="user-avatar" id="profile-avatar">👤</div>
                         <div class="user-details">
-                            <span id="user-display-name"><i class="fa-solid fa-circle-notch fa-spin"></i> Conectando...</span>
-                            <small id="user-role-badge">Painel do Aluno</small>
+                            <span id="user-display-name"><i class="fa-solid fa-circle-notch fa-spin"></i> <span data-i18n="sidebar.connecting">Conectando...</span></span>
+                            <small id="user-role-badge" data-i18n="sidebar.role">Painel do Aluno</small>
                         </div>
                     </div>
-                    
-                    <!-- Linha de Botões de Controle de Conta -->
+
                     <div class="user-actions-row">
-                        <button id="profile-btn" class="action-btn" title="Visualizar Meu Perfil">
-                            <i class="fa-solid fa-user-gear"></i> Perfil
+                        <button id="profile-btn" type="button" class="action-btn" data-i18n-title="sidebar.profile.title" title="Visualizar meu perfil">
+                            <i class="fa-solid fa-user-gear"></i> <span data-i18n="sidebar.profile">Perfil</span>
                         </button>
-                        <button id="settings-btn" class="action-btn" title="Configurações do Sistema">
-                            <i class="fa-solid fa-gear"></i> Opções
+                        <button id="settings-btn" type="button" class="action-btn" data-i18n-title="sidebar.settings.title" title="Configurações do sistema">
+                            <i class="fa-solid fa-gear"></i> <span data-i18n="sidebar.settings">Opções</span>
                         </button>
-                        <button id="logout-btn" class="action-btn danger" title="Sair da Conta">
-                            <i class="fa-solid fa-right-from-bracket"></i> Sair
+                        <button id="logout-btn" type="button" class="action-btn danger" data-i18n-title="sidebar.logout.title" title="Sair da conta">
+                            <i class="fa-solid fa-right-from-bracket"></i> <span data-i18n="sidebar.logout">Sair</span>
                         </button>
                     </div>
                 </div>
             </div>
         </aside>
 
-        <!-- ÁREA PRINCIPAL DO CHAT (DIREITA) -->
+        <!-- ÁREA PRINCIPAL DO CHAT -->
         <main class="chat-container">
             <header class="chat-header">
-                <div class="header-title" style="display: flex; flex-direction: column; align-items: center; text-align: center; width: 100%;">
-                    <img src="DuctorAiLogo.png" alt="Ductor AI Logo" class="brand-logo-emblem" style="margin-bottom: -5px;">
-    
-                    <h2 style="margin: 0; padding: 0; font-size: 1.8rem;">Ductor AI</h2>
-                    <p style="margin: 6px 0 0 0; color: var(--text-muted);">Sua mentora de estudos anti-plágio e suporte emocional</p>
+                <button type="button" id="menu-toggle" class="menu-toggle" aria-label="Menu" aria-controls="sidebar"><i class="fa-solid fa-bars"></i></button>
+                <div class="header-title">
+                    <img src="DuctorAiLogo.png" alt="Ductor AI" class="brand-logo-emblem">
+                    <h2>Ductor AI</h2>
+                    <p data-i18n="header.tagline">Sua mentora de estudos anti-plágio e suporte emocional</p>
                 </div>
             </header>
 
-            <!-- Caixa de Mensagens (Início Neutro e Amigável) -->
-            <div class="chat-messages" id="chat-messages">
-                <div class="message ia-message">
+            <div class="chat-messages" id="chat-messages" aria-live="polite">
+                <div class="message ia-message system-notice" data-i18n="chat.welcome">
                     Olá! Eu sou a Ductor AI. Estou aqui para te apoiar na sua jornada de estudos e na sua organização. Como está sendo o seu dia? O que gostaria de explorar ou conversar hoje?
                 </div>
             </div>
 
-            <!-- Entrada de Texto -->
             <footer class="chat-input-area">
+                <div class="ai-mode-selector">
+                    <button type="button" class="mode-pill active" id="mode-academic">
+                        <i class="fa-solid fa-graduation-cap"></i> <span data-i18n="mode.academic">Rigor Acadêmico</span>
+                    </button>
+                    <button type="button" class="mode-pill" id="mode-emotional">
+                        <i class="fa-solid fa-heart-pulse"></i> <span data-i18n="mode.emotional">Suporte Emocional</span>
+                    </button>
+                    <input type="hidden" id="current-ai-mode" value="academic">
+                </div>
+
                 <form id="chat-form">
-                    <div class="ai-mode-selector" style="display: flex; gap: 10px; margin-bottom: 10px; padding: 0 5px; width: 100%;">
-                        <button type="button" class="mode-pill active" id="mode-academic" onclick="selectAiMode('academic')">
-                            <i class="fa-solid fa-graduation-cap"></i> Rigor Acadêmico
-                        </button>
-                        <button type="button" class="mode-pill" id="mode-emotional" onclick="selectAiMode('emotional')">
-                            <i class="fa-solid fa-heart-pulse"></i> Suporte Emocional
-                        </button>
-                        <input type="hidden" id="current-ai-mode" value="academic">
-                    </div>
-                    <input type="text" id="user-input" placeholder="Digite sua dúvida ou desabafo aqui..." required autocomplete="off">
-                    <button type="submit" id="send-btn"><i class="fa-solid fa-paper-plane"></i></button>
+                    <textarea id="user-input" rows="1" maxlength="4000" data-i18n-placeholder="chat.placeholder" placeholder="Digite sua dúvida ou desabafo aqui..." required></textarea>
+                    <button type="submit" id="send-btn" data-i18n-title="chat.send" data-i18n-aria="chat.send" title="Enviar mensagem" aria-label="Enviar mensagem"><i class="fa-solid fa-paper-plane"></i></button>
                 </form>
             </footer>
         </main>
 
     </div>
 
-    <!-- WINDOW MODAL: CONFIGURAÇÕES -->
-    <div class="modal-overlay" id="settings-modal">
+    <!-- MODAL: CONFIGURAÇÕES -->
+    <div class="modal-overlay" id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <div class="modal-box">
             <div class="modal-header">
-                <h3><i class="fa-solid fa-gear"></i> Configurações do Sistema</h3>
-                <button class="close-modal-btn" id="close-settings-btn">&times;</button>
+                <h3 id="settings-title"><i class="fa-solid fa-gear"></i> <span data-i18n="settings.title">Configurações do Sistema</span></h3>
+                <button class="close-modal-btn" id="close-settings-btn" type="button" data-i18n-aria="modal.close" aria-label="Fechar">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="config-group">
-                    <label>Tema do Painel</label>
+                    <label for="language-selector" data-i18n="settings.language">Idioma</label>
+                    <select id="language-selector">
+                        <option value="pt">Português (Brasil)</option>
+                        <option value="en">English</option>
+                        <option value="es">Español</option>
+                    </select>
+                </div>
+                <div class="config-group">
+                    <label for="theme-selector" data-i18n="settings.theme">Tema do Painel</label>
                     <select id="theme-selector">
-                        <option value="dark">Escuro Absoluto (Padrão)</option>
-                        <option value="light">Modo Claro</option>
+                        <option value="dark" data-i18n="theme.dark">Escuro Absoluto (Padrão)</option>
+                        <option value="light" data-i18n="theme.light">Modo Claro</option>
                     </select>
                 </div>
                 <div class="config-group">
-                    <label>Tamanho da Fonte do Chat</label>
+                    <label for="font-size-selector" data-i18n="settings.font">Tamanho da Fonte do Chat</label>
                     <select id="font-size-selector">
-                        <option value="normal">Normal</option>
-                        <option value="large">Grande (Acessibilidade)</option>
+                        <option value="normal" data-i18n="font.normal">Normal</option>
+                        <option value="large" data-i18n="font.large">Grande (Acessibilidade)</option>
                     </select>
                 </div>
                 <div class="config-group">
-                    <label>Respostas Pedagógicas</label>
+                    <label data-i18n="settings.pedagogy">Respostas Pedagógicas</label>
                     <div class="toggle-mock">
-                        <span>Modo Anti-Plágio Rígido Ativo</span>
+                        <span data-i18n="settings.antiplagiarism">Modo Anti-Plágio Rígido Ativo</span>
                         <div class="status-indicator active"></div>
                     </div>
                 </div>
@@ -125,37 +134,98 @@
         </div>
     </div>
 
-    <!-- WINDOW MODAL: PERFIL DO USUÁRIO -->
-    <div class="modal-overlay" id="profile-modal">
+    <!-- MODAL: PERFIL -->
+    <div class="modal-overlay" id="profile-modal" role="dialog" aria-modal="true" aria-labelledby="profile-title">
         <div class="modal-box">
             <div class="modal-header">
-                <h3><i class="fa-solid fa-id-card"></i> Perfil do Estudante</h3>
-                <button class="close-modal-btn" id="close-profile-btn">&times;</button>
+                <h3 id="profile-title"><i class="fa-solid fa-id-card"></i> <span data-i18n="profile.title">Perfil do Estudante</span></h3>
+                <button class="close-modal-btn" id="close-profile-btn" type="button" data-i18n-aria="modal.close" aria-label="Fechar">&times;</button>
             </div>
             <div class="modal-body profile-center">
-                <div class="modal-body profile-center">
-                    <div class="profile-big-avatar" id="modal-profile-avatar" style="cursor: pointer; position: relative; overflow: hidden;" title="Clique para alterar sua foto">👤</div>
-    
-                    <input type="file" id="avatar-upload-input" accept="image/*" style="display: none;">
-    
-                    <small style="color: var(--text-muted); cursor: pointer; display: block; margin-top: 5px; margin-bottom: 15px;" id="change-photo-text"><i class="fa-solid fa-camera"></i> Clique na foto para alterar</small>
-    
-                    <h4 id="modal-profile-name">Nome do Aluno</h4>
-                    <p class="profile-role">Estudante Técnico - Ensino Médio</p>
+                <button type="button" class="profile-big-avatar" id="modal-profile-avatar" data-i18n-title="profile.photo_title" title="Clique para alterar sua foto">👤</button>
+                <input type="file" id="avatar-upload-input" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
+
+                <div class="photo-actions">
+                    <button type="button" class="link-btn" id="change-photo-text"><i class="fa-solid fa-camera"></i> <span data-i18n="profile.change_photo">Clique na foto para alterar</span></button>
+                    <button type="button" class="link-btn danger" id="remove-photo-btn" hidden><i class="fa-solid fa-trash"></i> <span data-i18n="profile.remove_photo">Remover foto</span></button>
+                </div>
+
+                <h4 id="modal-profile-name">&nbsp;</h4>
+                <p class="profile-role" data-i18n="profile.role">Estudante - Ensino Médio</p>
+
                 <div class="profile-stats">
                     <div class="stat-card">
-                        <span>Status da Conta</span>
-                        <strong>Ativo</strong>
+                        <span data-i18n="profile.status">Status da Conta</span>
+                        <strong data-i18n="profile.active">Ativo</strong>
                     </div>
                     <div class="stat-card">
-                        <span>Segurança</span>
-                        <strong>Criptografada (Bcrypt)</strong>
+                        <span data-i18n="profile.security">Segurança</span>
+                        <strong data-i18n="profile.encrypted">Senha criptografada (bcrypt)</strong>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- MODAL: AJUSTAR FOTO (recorte + pré-visualização) -->
+    <div class="modal-overlay" id="crop-modal" role="dialog" aria-modal="true" aria-labelledby="crop-title">
+        <div class="modal-box crop-box">
+            <div class="modal-header">
+                <h3 id="crop-title"><i class="fa-solid fa-crop-simple"></i> <span data-i18n="crop.title">Ajustar foto de perfil</span></h3>
+                <button class="close-modal-btn" id="crop-close" type="button" data-i18n-aria="modal.close" aria-label="Fechar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="crop-hint" data-i18n="crop.hint">Arraste a imagem para posicionar e use o zoom para enquadrar.</p>
+
+                <div class="crop-stage">
+                    <canvas id="crop-canvas" tabindex="0"></canvas>
+                </div>
+
+                <div class="crop-controls">
+                    <button type="button" id="crop-zoom-out" class="icon-btn" aria-label="Zoom -"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
+                    <input type="range" id="crop-zoom" min="1" max="4" step="0.01" value="1" data-i18n-aria="crop.zoom" aria-label="Zoom">
+                    <button type="button" id="crop-zoom-in" class="icon-btn" aria-label="Zoom +"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
+                    <button type="button" id="crop-rotate" class="icon-btn" data-i18n-title="crop.rotate" data-i18n-aria="crop.rotate" title="Girar"><i class="fa-solid fa-rotate-right"></i></button>
+                </div>
+
+                <div class="crop-previews">
+                    <span class="crop-previews-title" data-i18n="crop.preview">Como vai aparecer</span>
+                    <div class="crop-previews-row">
+                        <figure>
+                            <canvas id="crop-prev-sidebar" width="76" height="76" class="prev-sidebar"></canvas>
+                            <figcaption data-i18n="crop.preview_sidebar">Menu</figcaption>
+                        </figure>
+                        <figure>
+                            <canvas id="crop-prev-profile" width="160" height="160" class="prev-profile"></canvas>
+                            <figcaption data-i18n="crop.preview_profile">Perfil</figcaption>
+                        </figure>
+                    </div>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" id="crop-cancel" class="btn-secondary" data-i18n="crop.cancel">Cancelar</button>
+                    <button type="button" id="crop-save" class="btn-primary" data-i18n="crop.save">Salvar foto</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: CONFIRMAÇÃO (substitui o confirm() do navegador) -->
+    <div class="modal-overlay" id="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirm-text">
+        <div class="modal-box confirm-box">
+            <div class="modal-body">
+                <p id="confirm-text"></p>
+                <div class="modal-actions">
+                    <button type="button" id="confirm-cancel" class="btn-secondary" data-i18n="confirm.cancel">Cancelar</button>
+                    <button type="button" id="confirm-ok" class="btn-danger" data-i18n="confirm.delete">Apagar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-container" aria-live="polite"></div>
+
+    <script src="cropper.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

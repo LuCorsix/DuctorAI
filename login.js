@@ -1,113 +1,188 @@
-const boxLogin = document.getElementById('box-login');
-const boxRegister = document.getElementById('box-register');
-const boxRecover = document.getElementById('box-recover');
+/**
+ * TELA DE LOGIN / CADASTRO / RECUPERAÇÃO DE SENHA
+ */
+const { t, tErro } = window.i18n;
 
-const goToRegister = document.getElementById('go-to-register');
-const goToRecover = document.getElementById('go-to-recover');
-const goToLoginLinks = document.querySelectorAll('.go-to-login');
+const boxes = {
+    login: document.getElementById('box-login'),
+    register: document.getElementById('box-register'),
+    recover: document.getElementById('box-recover')
+};
 
-// Função simples e sem travar de troca de formulário
-function switchForm(targetBox) {
-    boxLogin.classList.remove('active');
-    boxRegister.classList.remove('active');
-    boxRecover.classList.remove('active');
-    targetBox.classList.add('active');
+// ---------- mensagens dentro do formulário (no lugar de alert) ----------
+function mostrarMsg(form, texto, tipo = 'error') {
+    const el = form.querySelector('.form-msg');
+    if (!el) return;
+    el.textContent = texto;
+    el.className = `form-msg ${tipo}`;
+    el.hidden = false;
 }
 
-// Configurando os cliques de transição
-goToRegister.addEventListener('click', (e) => { e.preventDefault(); switchForm(boxRegister); });
-goToRecover.addEventListener('click', (e) => { e.preventDefault(); switchForm(boxRecover); });
-goToLoginLinks.forEach(link => { link.addEventListener('click', (e) => { e.preventDefault(); switchForm(boxLogin); }); });
+function limparMsgs() {
+    document.querySelectorAll('.form-msg').forEach(el => { el.hidden = true; el.textContent = ''; });
+}
 
-// --- COMUNICAÇÃO REAL COM O SERVIDOR ---
+function trocarTela(nome, aviso) {
+    limparMsgs();
+    Object.values(boxes).forEach(b => b.classList.remove('active'));
+    boxes[nome].classList.add('active');
+    if (aviso) mostrarMsg(boxes[nome].querySelector('form'), aviso.texto, aviso.tipo);
+}
 
-// Evento de LOGIN
-document.getElementById('form-login').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    // Captura os inputs baseados na ordem do formulário de login
-    const inputs = e.target.querySelectorAll('input');
-    const email = inputs[0].value;
-    const password = inputs[1].value;
+document.getElementById('go-to-register').addEventListener('click', (e) => { e.preventDefault(); trocarTela('register'); });
+document.getElementById('go-to-recover').addEventListener('click', (e) => { e.preventDefault(); resetarRecuperacao(); trocarTela('recover'); });
+document.querySelectorAll('.go-to-login').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); trocarTela('login'); }));
 
+// ---------- idioma ----------
+document.querySelectorAll('[data-lang-select]').forEach(sel => {
+    sel.addEventListener('change', () => window.i18n.definirIdioma(sel.value));
+});
+
+// ---------- olhinho da senha ----------
+document.querySelectorAll('.toggle-password').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const campo = document.getElementById(btn.dataset.target);
+        const escondida = campo.type === 'password';
+        campo.type = escondida ? 'text' : 'password';
+        btn.classList.toggle('visible', escondida);
+        const icone = btn.querySelector('i');
+        icone.classList.toggle('fa-eye', !escondida);
+        icone.classList.toggle('fa-eye-slash', escondida);
+    });
+});
+
+// ---------- chamada à API com tratamento de erro padrão ----------
+async function chamarApi(caminho, corpo) {
+    const resposta = await fetch(`${window.API_BASE}${caminho}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(corpo)
+    });
+    const dados = await resposta.json().catch(() => ({}));
+    return { ok: resposta.ok && dados.success, dados };
+}
+
+// Desativa o botão durante o envio (evita cliques duplos) e restaura o texto no final
+async function comBotaoOcupado(form, textoOcupado, acao) {
+    const botao = form.querySelector('button[type="submit"]');
+    const textoOriginal = botao.textContent;
+    botao.disabled = true;
+    if (textoOcupado) botao.textContent = textoOcupado;
     try {
-        const response = await fetch('http://localhost:3001/api/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password })
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            // Salva o nome do aluno na sessão para o chat usar
-            localStorage.setItem('userName', data.name);
-            window.location.href = 'index.html'; // Vai para a tela do chat
-        } else {
-            alert(data.error); // Mensagem caso erre e-mail ou senha
-        }
-    } catch (error) {
-        alert("Erro ao conectar com o servidor. Verifique se deu 'node server.js' no terminal.");
+        await acao();
+    } catch (erro) {
+        mostrarMsg(form, t('net.error'));
+    } finally {
+        botao.disabled = false;
+        botao.textContent = textoOriginal;
     }
-});
+}
 
-// Evento de CADASTRO
-document.getElementById('form-cadastro').addEventListener('submit', async (e) => {
+// ---------- LOGIN ----------
+document.getElementById('form-login').addEventListener('submit', (e) => {
     e.preventDefault();
-    
-    // Captura os inputs baseados na ordem do formulário de cadastro
-    const inputs = e.target.querySelectorAll('input');
-    const name = inputs[0].value;
-    const email = inputs[1].value;
-    const password = inputs[2].value;
+    const form = e.target;
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+    limparMsgs();
 
-    try {
-        const response = await fetch('http://localhost:3001/api/register', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, email, password })
-        });
+    if (!email || !password) return mostrarMsg(form, t('err.missing_fields'));
 
-        const data = await response.json();
+    comBotaoOcupado(form, '...', async () => {
+        const { ok, dados } = await chamarApi('/login', { email, password });
+        if (!ok) return mostrarMsg(form, tErro(dados));
 
-        if (data.success) {
-            alert("Conta criada com sucesso! Agora faça seu login.");
-            e.target.reset(); // Limpa as caixas de texto do cadastro
-            switchForm(boxLogin); // Joga o usuário para o login
-        } else {
-            alert(data.error); // Mensagem se o email já existir
-        }
-    } catch (error) {
-        alert("Erro ao conectar com o servidor.");
-    }
+        localStorage.setItem('authToken', dados.token);
+        localStorage.setItem('userName', dados.name);
+        localStorage.setItem('userEmail', dados.email);
+        window.location.href = 'index.html';
+    });
 });
 
-// Evento de RECUPERAÇÃO DE SENHA
-document.getElementById('form-recuperar').addEventListener('submit', (e) => {
+// ---------- CADASTRO ----------
+document.getElementById('form-cadastro').addEventListener('submit', (e) => {
     e.preventDefault();
-    alert('Se o e-mail estiver cadastrado, as instruções foram enviadas!');
-    switchForm(boxLogin);
+    const form = e.target;
+    const name = document.getElementById('reg-name').value.trim();
+    const email = document.getElementById('reg-email').value.trim();
+    const password = document.getElementById('reg-password').value;
+    limparMsgs();
+
+    if (!name || !email || !password) return mostrarMsg(form, t('err.missing_fields'));
+    if (password.length < 8) return mostrarMsg(form, t('err.weak_password'));
+
+    comBotaoOcupado(form, '...', async () => {
+        const { ok, dados } = await chamarApi('/register', { name, email, password });
+        if (!ok) return mostrarMsg(form, tErro(dados));
+
+        form.reset();
+        document.getElementById('login-email').value = email;
+        trocarTela('login', { texto: t('reg.success'), tipo: 'success' });
+    });
 });
 
-// ==========================================
-// CONTROLE DE VISIBILIDADE DA SENHA (OLHINHO)
-// ==========================================
-document.addEventListener('DOMContentLoaded', () => {
-    const togglePassword = document.getElementById('toggle-password');
-    const passwordInput = document.getElementById('login-password');
+// ---------- RECUPERAÇÃO DE SENHA (2 etapas) ----------
+const passo1 = document.getElementById('recover-step-1');
+const passo2 = document.getElementById('recover-step-2');
+let emailEmRecuperacao = '';
 
-    if (togglePassword && passwordInput) {
-        togglePassword.addEventListener('click', function () {
-            // Alterna o tipo do input de password para text e vice-versa
-            const isPassword = passwordInput.getAttribute('type') === 'password';
-            passwordInput.setAttribute('type', isPassword ? 'text' : 'password');
-            
-            // Muda o desenho do ícone (olho aberto / olho cortado)
-            this.classList.toggle('fa-eye');
-            this.classList.toggle('fa-eye-slash');
-            
-            // Ajusta a cor para dar um feedback visual (azul quando ativo, cinza quando escondido)
-            this.style.color = isPassword ? '#3b82f6' : '#94a3b8';
-        });
-    }
+function resetarRecuperacao() {
+    emailEmRecuperacao = '';
+    passo1.hidden = false;
+    passo2.hidden = true;
+    document.getElementById('form-recuperar-email').reset();
+    document.getElementById('form-recuperar-confirmar').reset();
+}
+
+document.getElementById('form-recuperar-email').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const email = document.getElementById('recover-email').value.trim();
+    limparMsgs();
+    if (!email) return mostrarMsg(form, t('err.missing_fields'));
+
+    comBotaoOcupado(form, t('rec.sending'), async () => {
+        const { ok, dados } = await chamarApi('/recover-request', { email, language: window.i18n.idioma() });
+        if (!ok) return mostrarMsg(form, tErro(dados));
+
+        emailEmRecuperacao = email;
+        passo1.hidden = true;
+        passo2.hidden = false;
+        mostrarMsg(document.getElementById('form-recuperar-confirmar'), t('rec.sent'), 'success');
+        document.getElementById('recover-code').focus();
+    });
+});
+
+document.getElementById('form-recuperar-confirmar').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const codigo = document.getElementById('recover-code').value.trim();
+    const newPassword = document.getElementById('recover-new-password').value;
+    limparMsgs();
+
+    if (!codigo || !newPassword) return mostrarMsg(form, t('err.missing_fields'));
+    if (newPassword.length < 8) return mostrarMsg(form, t('err.weak_password'));
+
+    comBotaoOcupado(form, '...', async () => {
+        const { ok, dados } = await chamarApi('/recover-confirm', { email: emailEmRecuperacao, codigo, newPassword });
+        if (!ok) {
+            // código queimado ou expirado: volta para pedir outro
+            if (dados.code === 'code_burned' || dados.code === 'code_expired') {
+                resetarRecuperacao();
+                trocarTela('recover', { texto: tErro(dados), tipo: 'error' });
+                return;
+            }
+            return mostrarMsg(form, tErro(dados));
+        }
+
+        const email = emailEmRecuperacao;
+        resetarRecuperacao();
+        document.getElementById('login-email').value = email;
+        trocarTela('login', { texto: t('rec.done'), tipo: 'success' });
+    });
+});
+
+// só dígitos no campo do código
+document.getElementById('recover-code').addEventListener('input', (e) => {
+    e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6);
 });

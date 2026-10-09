@@ -1,96 +1,135 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" data-title-key="login.title">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Ductor AI: mentora de estudos anti-plágio e suporte emocional para estudantes.">
+    <meta name="theme-color" content="#0f172a">
     <title>Ductor AI - Entrar</title>
-    
+
     <link rel="icon" type="image/png" href="DuctorAiLogo.png">
-    
     <link rel="stylesheet" href="login.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="config.js"></script>
+    <script src="i18n.js"></script>
 </head>
 <body>
 
-    <div class="login-container">
-        <div class="login-box form-wrapper active" id="box-login">
-            <h2>Bem-vindo! 🧠</h2>
-            <p>Faça login para acessar a Ductor AI</p>
-            
-            <form id="form-login">
+    <div class="lang-picker">
+        <i class="fa-solid fa-globe" aria-hidden="true"></i>
+        <select data-lang-select aria-label="Idioma / Language / Idioma">
+            <option value="pt">Português</option>
+            <option value="en">English</option>
+            <option value="es">Español</option>
+        </select>
+    </div>
+
+    <main class="login-container">
+
+        <!-- ===================== LOGIN ===================== -->
+        <section class="login-box form-wrapper active" id="box-login">
+            <img src="DuctorAiLogo.png" alt="Ductor AI" class="login-logo">
+            <h2 data-i18n="login.welcome">Bem-vindo! 🧠</h2>
+            <p data-i18n="login.subtitle">Faça login para acessar a Ductor AI</p>
+
+            <form id="form-login" novalidate>
                 <div class="input-group">
-                    <label><i class="fa-solid fa-envelope"></i> E-mail</label>
-                    <input type="email" placeholder="Digite seu e-mail" required autocomplete="username">
+                    <label for="login-email"><i class="fa-solid fa-envelope"></i> <span data-i18n="field.email">E-mail</span></label>
+                    <input type="email" id="login-email" data-i18n-placeholder="field.email.ph" placeholder="Digite seu e-mail" required autocomplete="username">
                 </div>
-                <div class="input-group" style="margin-bottom: 15px;">
-                    <label for="login-password" style="display: block; margin-bottom: 5px; color: #fff;">Senha</label>
-    
-                    <div class="password-container" style="position: relative; width: 100%; display: flex; align-items: center;">
-        
-                        <input type="password" id="login-password" placeholder="Digite sua senha" required 
-                               style="width: 100%; padding-right: 40px; box-sizing: border-box;">
-        
-                        <i class="fa-solid fa-eye" id="toggle-password" 
-                           style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #94a3b8; z-index: 10; font-size: 1.1rem;"></i>
+                <div class="input-group">
+                    <label for="login-password"><i class="fa-solid fa-lock"></i> <span data-i18n="field.password">Senha</span></label>
+                    <div class="password-container">
+                        <input type="password" id="login-password" data-i18n-placeholder="field.password.ph" placeholder="Digite sua senha" required autocomplete="current-password">
+                        <button type="button" class="toggle-password" data-target="login-password" data-i18n-aria="login.toggle_password" aria-label="Mostrar ou ocultar a senha">
+                            <i class="fa-solid fa-eye"></i>
+                        </button>
                     </div>
                 </div>
-                <button type="submit" class="btn-submit">Entrar</button>
+                <div class="form-msg" role="alert" hidden></div>
+                <button type="submit" class="btn-submit" data-i18n="login.submit">Entrar</button>
             </form>
 
             <div class="form-footer">
-                <p>Não tem uma conta? <a href="#" id="go-to-register">Cadastre-se</a></p>
-                <p><a href="#" id="go-to-recover">Esqueceu sua senha?</a></p>
+                <p><span data-i18n="login.noaccount">Não tem uma conta?</span> <a href="#" id="go-to-register" data-i18n="login.signup">Cadastre-se</a></p>
+                <p><a href="#" id="go-to-recover" data-i18n="login.forgot">Esqueceu sua senha?</a></p>
             </div>
-        </div>
+        </section>
 
-        <div class="login-box form-wrapper" id="box-register">
-            <h2>Criar Conta ✨</h2>
-            <p>Cadastre-se para começar seus estudos</p>
-            
-            <form id="form-cadastro">
+        <!-- ===================== CADASTRO ===================== -->
+        <section class="login-box form-wrapper" id="box-register">
+            <h2 data-i18n="reg.title">Criar Conta ✨</h2>
+            <p data-i18n="reg.subtitle">Cadastre-se para começar seus estudos</p>
+
+            <form id="form-cadastro" novalidate>
                 <div class="input-group">
-                    <label><i class="fa-solid fa-user"></i> Nome Completo</label>
-                    <input type="text" placeholder="Ex: João Silva" required autocomplete="name">
+                    <label for="reg-name"><i class="fa-solid fa-user"></i> <span data-i18n="field.name">Nome Completo</span></label>
+                    <input type="text" id="reg-name" data-i18n-placeholder="field.name.ph" placeholder="Ex: João Silva" required maxlength="80" autocomplete="name">
                 </div>
                 <div class="input-group">
-                    <label><i class="fa-solid fa-envelope"></i> E-mail</label>
-                    <input type="email" placeholder="Ex: joao@escola.com" required autocomplete="email">
+                    <label for="reg-email"><i class="fa-solid fa-envelope"></i> <span data-i18n="field.email">E-mail</span></label>
+                    <input type="email" id="reg-email" data-i18n-placeholder="reg.email.ph" placeholder="Ex: joao@escola.com" required autocomplete="email">
                 </div>
                 <div class="input-group">
-                    <label><i class="fa-solid fa-lock"></i> Senha</label>
-                    <input type="password" placeholder="Crie uma senha segura" required autocomplete="new-password">
+                    <label for="reg-password"><i class="fa-solid fa-lock"></i> <span data-i18n="field.password">Senha</span></label>
+                    <div class="password-container">
+                        <input type="password" id="reg-password" data-i18n-placeholder="reg.password.ph" placeholder="Crie uma senha" required minlength="8" maxlength="72" autocomplete="new-password">
+                        <button type="button" class="toggle-password" data-target="reg-password" data-i18n-aria="login.toggle_password" aria-label="Mostrar ou ocultar a senha">
+                            <i class="fa-solid fa-eye"></i>
+                        </button>
+                    </div>
                 </div>
-                <button type="submit" class="btn-submit">Criar Conta</button>
+                <div class="form-msg" role="alert" hidden></div>
+                <button type="submit" class="btn-submit" data-i18n="reg.submit">Criar Conta</button>
             </form>
 
             <div class="form-footer">
-                <p>Já tem uma conta? <a href="#" class="go-to-login">Fazer Login</a></p>
+                <p><span data-i18n="reg.have">Já tem uma conta?</span> <a href="#" class="go-to-login" data-i18n="reg.signin">Fazer Login</a></p>
             </div>
-        </div>
+        </section>
 
-        <div class="login-box form-wrapper" id="box-recover">
-            <h2>Recuperar Senha 🔑</h2>
-            <p>Insira seu e-mail e a nova senha que deseja definir</p>
-            
-            <form id="form-recuperar">
-                <div class="input-group">
-                    <label><i class="fa-solid fa-envelope"></i> E-mail Cadastrado</label>
-                    <input type="email" placeholder="Digite seu e-mail" required>
-                </div>
+        <!-- ===================== RECUPERAR SENHA ===================== -->
+        <section class="login-box form-wrapper" id="box-recover">
+            <h2 data-i18n="rec.title">Recuperar Senha 🔑</h2>
 
-                <div class="input-group">
-                    <label><i class="fa-solid fa-lock"></i> Nova Senha</label>
-                    <input type="password" placeholder="Digite sua nova senha" required>
-                </div>
+            <div id="recover-step-1">
+                <p data-i18n="rec.step1">Informe seu e-mail para receber um código de segurança</p>
+                <form id="form-recuperar-email" novalidate>
+                    <div class="input-group">
+                        <label for="recover-email"><i class="fa-solid fa-envelope"></i> <span data-i18n="rec.email">E-mail Cadastrado</span></label>
+                        <input type="email" id="recover-email" data-i18n-placeholder="field.email.ph" placeholder="Digite seu e-mail" required autocomplete="email">
+                    </div>
+                    <div class="form-msg" role="alert" hidden></div>
+                    <button type="submit" class="btn-submit" data-i18n="rec.send">Enviar Código</button>
+                </form>
+            </div>
 
-                <button type="submit" class="btn-submit">Redefinir Senha</button>
-            </form>
+            <div id="recover-step-2" hidden>
+                <p data-i18n="rec.step2">Digite o código de 6 dígitos enviado ao seu e-mail e defina a nova senha</p>
+                <form id="form-recuperar-confirmar" novalidate>
+                    <div class="input-group">
+                        <label for="recover-code"><i class="fa-solid fa-shield-halved"></i> <span data-i18n="rec.code">Código de Verificação</span></label>
+                        <input type="text" id="recover-code" placeholder="000000" maxlength="6" inputmode="numeric" autocomplete="one-time-code" required>
+                    </div>
+                    <div class="input-group">
+                        <label for="recover-new-password"><i class="fa-solid fa-lock"></i> <span data-i18n="rec.newpass">Nova Senha</span></label>
+                        <div class="password-container">
+                            <input type="password" id="recover-new-password" data-i18n-placeholder="rec.newpass.ph" placeholder="Mínimo de 8 caracteres" required minlength="8" maxlength="72" autocomplete="new-password">
+                            <button type="button" class="toggle-password" data-target="recover-new-password" data-i18n-aria="login.toggle_password" aria-label="Mostrar ou ocultar a senha">
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="form-msg" role="alert" hidden></div>
+                    <button type="submit" class="btn-submit" data-i18n="rec.reset">Redefinir Senha</button>
+                </form>
+            </div>
 
             <div class="form-footer">
-                <p>Lembrou a senha? <a href="#" class="go-to-login">Voltar para o Login</a></p>
+                <p><span data-i18n="rec.remembered">Lembrou a senha?</span> <a href="#" class="go-to-login" data-i18n="rec.back">Voltar para o Login</a></p>
             </div>
-        </div>
-    </div>
+        </section>
+    </main>
 
     <script src="login.js"></script>
 </body>

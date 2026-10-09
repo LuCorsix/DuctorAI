@@ -1,0 +1,7 @@
+node_modules/
+.env
+# Dados dos usuários (nunca publique!)
+usuarios.json
+dados_usuarios/
+*.db
+*.tmp

@@ -1,23 +1,26 @@
 {
   "name": "ductor-ai",
-  "version": "1.0.0",
-  "description": "",
-  "main": "script.js",
+  "version": "2.0.0",
+  "description": "Ductor AI - mentora de estudos anti-plágio e suporte emocional para estudantes do Ensino Médio",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "groq-sdk": "^1.2.1",
     "nodemailer": "^9.0.0",
-    "sqlite3": "^6.0.1"
+    "pg": "^8.13.0"
   }
 }

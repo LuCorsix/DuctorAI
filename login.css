@@ -134,3 +134,115 @@ body {
 .form-footer a:hover {
     text-decoration: underline;
 }
+/* ==========================================
+   REFINAMENTOS (v2)
+   ========================================== */
+.login-logo {
+    display: block;
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 14px;
+    object-fit: contain;
+    mix-blend-mode: screen; /* remove o fundo preto da logo */
+}
+
+.lang-picker {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 6px 10px;
+    color: var(--text-muted);
+}
+
+.lang-picker select {
+    background: transparent;
+    border: none;
+    color: var(--text-main);
+    font-size: 0.9rem;
+    cursor: pointer;
+    outline: none;
+}
+
+.lang-picker select option {
+    background: var(--bg-card);
+    color: var(--text-main);
+}
+
+.password-container {
+    position: relative;
+    width: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.password-container input {
+    width: 100%;
+    padding-right: 46px;
+}
+
+.toggle-password {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1.05rem;
+    padding: 8px 10px;
+    border-radius: 6px;
+    transition: color 0.2s;
+}
+
+.toggle-password:hover,
+.toggle-password:focus-visible,
+.toggle-password.visible {
+    color: var(--primary);
+}
+
+.form-msg {
+    font-size: 0.88rem;
+    line-height: 1.4;
+    padding: 10px 12px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    border: 1px solid transparent;
+}
+
+.form-msg[hidden] {
+    display: none;
+}
+
+.form-msg.error {
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.4);
+    color: #fca5a5;
+}
+
+.form-msg.success {
+    background: rgba(34, 197, 94, 0.12);
+    border-color: rgba(34, 197, 94, 0.4);
+    color: #86efac;
+}
+
+.btn-submit:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+.login-box .form-wrapper [hidden],
+[hidden] {
+    display: none !important;
+}
+
+:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}

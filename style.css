@@ -104,6 +104,7 @@ body {
     background-color: var(--bg-chat);
     color: var(--text-main);
     height: 100vh;
+    height: 100dvh;
     overflow: hidden;
     transition: background-color 0.2s, color 0.2s;
 }
@@ -111,8 +112,9 @@ body {
 /* CONTAINER PRINCIPAL */
 .app-container {
     display: flex;
-    width: 100vw;
+    width: 100%;
     height: 100vh;
+    height: 100dvh;
 }
 
 
@@ -341,42 +343,72 @@ body {
     border-radius: 16px 0px 16px 16px;
 }
 
+/* --- ÁREA DO CHAT PRINCIPAL (ENTRADA DE TEXTO CORRIGIDA) --- */
 .chat-input-area {
-    padding: 20px 40px 30px 40px;
+    padding: 15px 30px 25px 30px;
 }
 
 #chat-form {
     display: flex;
-    background: var(--bg-input);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 10px 16px;
     align-items: center;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+    gap: 12px;
+    background: var(--bg-input);
+    border: 1.5px solid var(--border);
+    border-radius: 16px;
+    padding: 8px 14px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Efeito visual de brilho no contêiner quando o usuário clica para digitar */
+#chat-form:focus-within {
+    border-color: var(--primary);
+    box-shadow: 0 0 12px rgba(59, 130, 246, 0.3);
 }
 
 #user-input {
     flex: 1;
+    min-width: 0; /* IMPRESCINDÍVEL: Impede o campo de estourar o layout e cortar o texto */
     background: transparent;
     border: none;
     color: var(--text-main);
-    padding: 8px;
-    font-size: 1rem;
-    transition: font-size 0.2s;
+    font-size: 0.98rem;
+    text-align: left; /* Garante alinhamento correto à esquerda */
+    padding: 8px 4px;
+    outline: none;
+    resize: none;
+    font-family: inherit;
+    line-height: 1.4;
 }
 
-#user-input:focus {
-    outline: none;
+#user-input::placeholder {
+    color: var(--text-muted);
+    opacity: 0.7;
 }
 
 #send-btn {
+    flex-shrink: 0; /* Impede o botão de ser espremido */
     background: var(--primary);
     color: white;
     border: none;
     width: 42px;
     height: 42px;
-    border-radius: 10px;
+    border-radius: 12px;
     cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    transition: background-color 0.2s, transform 0.1s;
+}
+
+#send-btn:hover {
+    background: var(--primary-hover);
+    transform: scale(1.04);
+}
+
+#send-btn:active {
+    transform: scale(0.96);
 }
 
 
@@ -547,29 +579,13 @@ body {
 }
 
 /* ==========================================
-   NOVO LOGO PREMIUM DA DUCTOR AI
-   ========================================== */
-.brand-logo-emblem {
-    width: 75px;
-    height: 75px;
-    object-fit: contain;
-    mix-blend-mode: screen; /* Remove o fundo preto da imagem e deixa só as linhas iluminadas */
-    opacity: 0.95;
-    transition: transform 0.3s ease;
-}
-
-.brand-logo-emblem:hover {
-    transform: scale(1.05); /* Faz o logo dar um leve pulinho ao passar o rato */
-}
-
-/* ==========================================
    CONFIGURAÇÃO DA LOGO DA DUCTOR AI
    ========================================== */
 .brand-logo-emblem {
     width: 75px;
     height: 75px;
     object-fit: contain;
-    mix-blend-mode: screen; /* Faz o fundo preto sumir no painel escuro */
+    mix-blend-mode: screen; /* Remove o fundo preto da imagem e deixa só as linhas iluminadas */
     opacity: 0.95;
     transition: transform 0.3s ease;
 }
@@ -635,4 +651,339 @@ body {
 /* Deixa o olhinho mais aceso quando o usuário passa o mouse por cima */
 .password-container i:hover {
     color: #f8fafc; 
+}
+
+
+/* ==========================================
+   BOTÃO DE APAGAR CHAT (HISTÓRICO)
+   ========================================== */
+.history-item .history-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.delete-chat-btn {
+    flex-shrink: 0;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    opacity: 0;
+    transition: opacity 0.2s, color 0.2s, background 0.2s;
+}
+
+.history-item:hover .delete-chat-btn,
+.history-item.active .delete-chat-btn {
+    opacity: 1;
+}
+
+.delete-chat-btn:hover {
+    color: white;
+    background: var(--danger);
+}
+
+
+/* ==========================================================================
+   V2 - REFINAMENTOS PROFISSIONAIS
+   ========================================================================== */
+[hidden] { display: none !important; }
+
+:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+/* ---------- cabeçalho e seletor de modo (antes eram estilos inline) ---------- */
+.chat-header { position: relative; }
+
+.header-title {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    width: 100%;
+}
+
+.header-title h2 { margin: 0; padding: 0; font-size: 1.8rem; }
+.header-title p { margin: 6px 0 0 0; color: var(--text-muted); }
+.header-title .brand-logo-emblem { margin-bottom: -5px; }
+
+.ai-mode-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 12px;
+    padding: 0 5px;
+    width: 100%;
+}
+
+body.light-theme .mode-pill {
+    background-color: rgba(255, 255, 255, 0.75);
+    border-color: var(--border);
+    color: var(--text-muted);
+}
+body.light-theme .mode-pill:hover { color: var(--text-main); }
+
+/* ---------- mensagens ---------- */
+.message code {
+    background: rgba(148, 163, 184, 0.2);
+    padding: 1px 6px;
+    border-radius: 5px;
+    font-family: Consolas, 'Courier New', monospace;
+    font-size: 0.92em;
+}
+
+#send-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* ---------- avatar vira botão (acessível por teclado) ---------- */
+.profile-big-avatar {
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    padding: 0;
+    transition: box-shadow 0.2s;
+}
+.profile-big-avatar:hover { box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5); }
+.user-avatar { overflow: hidden; flex-shrink: 0; }
+
+.photo-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px 16px;
+    margin: 2px 0 14px;
+}
+
+.link-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 6px;
+}
+.link-btn:hover { color: var(--text-main); text-decoration: underline; }
+.link-btn.danger:hover { color: var(--danger); }
+
+/* ---------- botões padrão dos modais ---------- */
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.btn-primary, .btn-secondary, .btn-danger {
+    border: 1px solid transparent;
+    border-radius: 10px;
+    padding: 10px 18px;
+    font-size: 0.92rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s, transform 0.1s;
+}
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-secondary { background: transparent; border-color: var(--border); color: var(--text-main); }
+.btn-secondary:hover { background: rgba(148, 163, 184, 0.15); }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { background: var(--danger-hover); }
+.btn-primary:active, .btn-danger:active, .btn-secondary:active { transform: scale(0.97); }
+
+.modal-box { max-height: 92vh; overflow-y: auto; }
+.confirm-box { max-width: 380px; }
+.confirm-box p { line-height: 1.5; }
+
+/* ---------- recorte de foto ---------- */
+.crop-box { max-width: 440px; }
+
+.crop-hint {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin-bottom: 14px;
+    text-align: center;
+}
+
+.crop-stage {
+    display: flex;
+    justify-content: center;
+    background: #020617;
+    border-radius: 12px;
+    padding: 10px;
+}
+
+#crop-canvas {
+    width: 100%;
+    max-width: 300px;
+    aspect-ratio: 1 / 1;
+    cursor: grab;
+    touch-action: none; /* arrastar no celular não rola a página */
+    border-radius: 8px;
+    outline-offset: 3px;
+}
+#crop-canvas.grabbing { cursor: grabbing; }
+
+.crop-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 16px 0 4px;
+}
+
+.crop-controls input[type="range"] {
+    flex: 1;
+    accent-color: var(--primary);
+    cursor: pointer;
+}
+
+.icon-btn {
+    width: 38px;
+    height: 38px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-sidebar);
+    border: 1px solid var(--border);
+    color: var(--text-main);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: border-color 0.2s, background-color 0.2s;
+}
+.icon-btn:hover { border-color: var(--primary); }
+
+.crop-previews {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+}
+
+.crop-previews-title {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+}
+
+.crop-previews-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 28px;
+}
+
+.crop-previews-row figure {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+
+.crop-previews-row figcaption { font-size: 0.72rem; color: var(--text-muted); }
+
+.prev-sidebar { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--border); }
+.prev-profile { width: 80px; height: 80px; border-radius: 50%; border: 1px solid var(--border); }
+
+/* ---------- avisos (toast) ---------- */
+#toast-container {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 2000;
+    width: min(92vw, 420px);
+    pointer-events: none;
+}
+
+.toast {
+    background: #1e293b;
+    color: #f8fafc;
+    border: 1px solid #334155;
+    border-left: 4px solid var(--primary);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 0.9rem;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    animation: toastIn 0.25s ease-out;
+}
+.toast.error { border-left-color: var(--danger); }
+
+@keyframes toastIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------- celular e tablet: menu lateral vira gaveta ---------- */
+.menu-toggle { display: none; }
+.sidebar-backdrop { display: none; }
+
+@media (max-width: 800px) {
+    .sidebar {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: min(86vw, 320px);
+        min-width: 0;
+        transform: translateX(-102%);
+        transition: transform 0.25s ease, background-color 0.2s;
+        z-index: 1200;
+        box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
+    }
+    .sidebar.open { transform: translateX(0); }
+
+    .sidebar-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.55);
+        z-index: 1100;
+    }
+    .sidebar-backdrop.show { display: block; }
+
+    .menu-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: absolute;
+        top: 14px;
+        left: 14px;
+        width: 42px;
+        height: 42px;
+        background: var(--bg-sidebar);
+        border: 1px solid var(--border);
+        color: var(--text-main);
+        border-radius: 10px;
+        font-size: 1.05rem;
+        cursor: pointer;
+    }
+
+    .chat-header { padding: 14px 14px 14px 64px; }
+    .header-title h2 { font-size: 1.4rem; }
+    .header-title p { font-size: 0.78rem; }
+    .brand-logo-emblem { width: 52px; height: 52px; }
+    .chat-messages { padding: 18px 14px; gap: 14px; }
+    .message { max-width: 92%; padding: 12px 14px; }
+    .chat-input-area { padding: 10px 12px 14px; }
+    #user-input { font-size: 1rem; } /* 16px evita o zoom automático do iPhone */
+    .crop-previews-row { gap: 20px; }
+}
+
+/* ---------- respeita quem prefere menos movimento ---------- */
+@media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
 }

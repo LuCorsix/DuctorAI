@@ -9,6 +9,12 @@
     "id": 2,
     "name": "Lucas Rafael Corsico de Castro",
     "email": "lucasrcorsico@gmail.com",
-    "password": "$2b$10$K8dvT1B3fHk4SmSyq/8y3.yyRSFoCI8emXe2exL0GVb9Ao8w5fCc2"
+    "password": "$2b$10$DP/bljCQj3eaIdmIy1Ow1u7R12ITXjzHZBTsuGmHhf/K9XHl1Bdg."
+  },
+  {
+    "id": 3,
+    "name": "Eloisa da cruz rodrigues de lima",
+    "email": "eloisadacruz41@gmail.com",
+    "password": "$2b$10$1BkBLvVlGHw21FLSpzYqbeyTfHd/X6axlYcYfI7qV5eytPdQ53ypm"
   }
 ]

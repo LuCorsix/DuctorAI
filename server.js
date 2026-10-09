@@ -1,299 +1,652 @@
+/**
+ * DUCTOR AI - SERVIDOR (API + site)
+ * ------------------------------------------------------------------
+ * - Serve o site (pasta /public) e a API (/api/...) no mesmo endereço
+ * - Login com token assinado, dados individuais por usuário
+ * - Limites contra tentativas de invasão (login, recuperação, chat)
+ * - Armazenamento em JSON (local) ou PostgreSQL (produção)
+ */
+require('dotenv').config({ quiet: true });
 const express = require('express');
 const cors = require('cors');
-require('dotenv').config();
 const Groq = require('groq-sdk');
-const fs = require('fs');
-const path = require('path');
 const bcrypt = require('bcryptjs');
-const nodemailer = require('nodemailer'); // 👈 Importado o Nodemailer para controle de e-mails
+const nodemailer = require('nodemailer');
+const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const { criarStorage } = require('./storage');
+const { SYSTEM_PROMPT } = require('./prompt');
 
-console.log("🚀 Inicializando o servidor da Ductor AI...");
+const IS_PROD = process.env.NODE_ENV === 'production';
+const IDIOMAS = ['pt', 'en', 'es'];
+const NOME_IDIOMA = { pt: 'Português do Brasil', en: 'English', es: 'Español' };
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+// =======================================================
+// UTILITÁRIOS
+// =======================================================
+const normalizarEmail = (email) => String(email || '').trim().toLowerCase();
+const emailValido = (email) => email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
+const idiomaValido = (l) => (IDIOMAS.includes(l) ? l : 'pt');
+const dormir = (ms) => new Promise(r => setTimeout(r, ms));
+const escaparHtml = (t) => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-// --- CONFIGURAÇÃO DO BANCO DE DADOS EM ARQUIVO (JSON) ---
-const FILE_PATH = path.join(__dirname, 'usuarios.json');
+function senhaValida(senha) {
+    // bcrypt só considera os primeiros 72 bytes, por isso esse teto
+    return typeof senha === 'string' && senha.length >= 8 && Buffer.byteLength(senha, 'utf8') <= 72;
+}
 
-// Função auxiliar para ler os usuários do arquivo
-function obterUsuarios() {
+// Resposta de erro padronizada: "code" permite ao site traduzir a mensagem
+function falha(res, status, code, mensagem, extra = {}) {
+    return res.status(status).json({ error: mensagem, code, ...extra });
+}
+
+// =======================================================
+// LIMITES DE TENTATIVAS (em memória; zeram se o servidor reiniciar)
+// =======================================================
+const contadores = new Map();
+
+function contar(chave, janelaMs) {
+    const agora = Date.now();
+    let r = contadores.get(chave);
+    if (!r || r.expira <= agora) {
+        r = { n: 0, expira: agora + janelaMs };
+        contadores.set(chave, r);
+    }
+    r.n++;
+    return r;
+}
+
+// Quantas tentativas já foram feitas e quantos segundos faltam para zerar
+function consultar(chave) {
+    const r = contadores.get(chave);
+    if (!r || r.expira <= Date.now()) return { n: 0, segundos: 0 };
+    return { n: r.n, segundos: Math.ceil((r.expira - Date.now()) / 1000) };
+}
+
+const zerar = (chave) => contadores.delete(chave);
+
+// Retorna os segundos de espera se o limite estourou; 0 se está liberado
+function esperaNecessaria(chave, max) {
+    const c = consultar(chave);
+    return c.n >= max ? c.segundos : 0;
+}
+
+function bloquear(res, segundos, code = 'too_many_attempts') {
+    res.set('Retry-After', String(segundos));
+    return falha(res, 429, code, `Muitas tentativas. Tente novamente em ${Math.ceil(segundos / 60)} min.`, { retryAfter: segundos });
+}
+
+const MIN = 60 * 1000;
+const HORA = 60 * MIN;
+const LIMITES = {
+    loginPorPar: { max: 5, janela: 15 * MIN },     // mesmo IP + mesmo e-mail
+    loginPorIp: { max: 20, janela: 15 * MIN },     // qualquer e-mail, mesmo IP
+    cadastroPorIp: { max: 10, janela: HORA },
+    recuperarPorIp: { max: 10, janela: HORA },
+    recuperarPorEmailHora: { max: 5, janela: HORA },
+    recuperarIntervalo: { max: 1, janela: 60 * 1000 },
+    confirmarPorIp: { max: 20, janela: 15 * MIN },
+    tentativasPorCodigo: 5,
+    chatPorMinuto: { max: 15, janela: MIN },
+    chatPorDia: { max: 300, janela: 24 * HORA }
+};
+
+// =======================================================
+// DETECÇÃO DE SITUAÇÃO DE RISCO (autoagressão / suicídio)
+// =======================================================
+const REGEX_CRISE = new RegExp([
+    'suicid', 'me matar', 'quero morrer', 'vou me matar', 'acabar com (a )?(minha )?vida', 'tirar (a )?minha vida',
+    'automutila', 'me cortar', 'me machucar', 'nao quero (mais )?viver', 'nao aguento mais viver',
+    'kill myself', 'want to die', 'end my life', 'self[- ]?harm', 'hurt myself', "don'?t want to live",
+    'quiero morir', 'quitarme la vida', 'matarme', 'hacerme dano', 'no quiero vivir'
+].join('|'), 'i');
+
+function mensagemDeRisco(texto) {
+    const limpo = String(texto).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return REGEX_CRISE.test(limpo);
+}
+
+// =======================================================
+// FILTRO DE RESPOSTA DA IA
+// =======================================================
+function sanitizarResposta(texto) {
+    if (!texto) return '';
+    let limpo = texto;
+    limpo = limpo.replace(/<think>[\s\S]*?<\/think>/gi, '');
+    limpo = limpo.replace(/^(Claro|Com certeza|Certamente|Entendido|Sim),?\s*(!|\.)?\s*/i, '');
+    limpo = limpo.replace(/\n\n(Nota|Observação|Lembre-se):[\s\S]*$/i, '');
+    limpo = limpo.trim();
+    // Depois de cortar a abertura, garante a inicial maiúscula
+    return limpo.charAt(0).toUpperCase() + limpo.slice(1);
+}
+
+// =======================================================
+// E-MAIL (3 modos: Brevo por API, Gmail por SMTP, Ethereal de teste)
+// =======================================================
+const TEXTOS_EMAIL = {
+    pt: { assunto: 'Código de segurança - Ductor AI', ola: 'Olá', corpo: 'Seu código de segurança para redefinir a senha é:', validade: 'Válido por 10 minutos. Se não foi você que pediu, ignore este e-mail.' },
+    en: { assunto: 'Security code - Ductor AI', ola: 'Hello', corpo: 'Your security code to reset your password is:', validade: 'Valid for 10 minutes. If you did not request this, just ignore this email.' },
+    es: { assunto: 'Código de seguridad - Ductor AI', ola: 'Hola', corpo: 'Tu código de seguridad para restablecer la contraseña es:', validade: 'Válido por 10 minutos. Si no lo solicitaste, ignora este correo.' }
+};
+
+function montarEmailRecuperacao(nome, codigo, idioma) {
+    const t = TEXTOS_EMAIL[idioma] || TEXTOS_EMAIL.pt;
+    const html = `
+        <div style="font-family: sans-serif; background-color: #0f172a; color: #f8fafc; padding: 30px; border-radius: 10px; max-width: 500px; margin: 0 auto;">
+            <h2 style="color: #3b82f6; text-align: center;">Ductor AI</h2>
+            <p>${t.ola}, <strong>${escaparHtml(nome)}</strong>!</p>
+            <p>${t.corpo}</p>
+            <div style="background-color: #1e293b; padding: 15px; text-align: center; font-size: 26px; font-weight: bold; letter-spacing: 6px; border-radius: 8px; color: #3b82f6; margin: 25px 0;">${codigo}</div>
+            <p style="font-size: 13px; color: #94a3b8; text-align: center;">${t.validade}</p>
+        </div>`;
+    return { assunto: t.assunto, html };
+}
+
+async function criarEmailer() {
     try {
-        if (!fs.existsSync(FILE_PATH)) {
-            fs.writeFileSync(FILE_PATH, JSON.stringify([]));
+        if (process.env.EMAIL_TEST === 'true') {
+            const conta = await nodemailer.createTestAccount();
+            const transporte = nodemailer.createTransport({ host: 'smtp.ethereal.email', port: 587, secure: false, auth: { user: conta.user, pass: conta.pass } });
+            console.log('📧 Modo de teste (Ethereal): nenhum e-mail real será enviado.');
+            return {
+                modo: 'teste',
+                async enviar({ para, assunto, html }) {
+                    const info = await transporte.sendMail({ from: '"Ductor AI" <teste@ductorai.com>', to: para, subject: assunto, html });
+                    console.log('🔗 Veja o e-mail de teste em:', nodemailer.getTestMessageUrl(info));
+                }
+            };
         }
-        const dados = fs.readFileSync(FILE_PATH, 'utf8');
-        return JSON.parse(dados);
-    } catch (error) {
-        console.error("Erro ao ler o arquivo de usuários:", error);
-        return [];
+
+        if (process.env.EMAIL_PROVIDER === 'brevo' && process.env.BREVO_API_KEY && process.env.EMAIL_FROM) {
+            console.log('📧 E-mail via Brevo (API HTTP). Remetente:', process.env.EMAIL_FROM);
+            return {
+                modo: 'brevo',
+                async enviar({ para, assunto, html }) {
+                    const resp = await fetch('https://api.brevo.com/v3/smtp/email', {
+                        method: 'POST',
+                        headers: { 'api-key': process.env.BREVO_API_KEY, 'content-type': 'application/json', accept: 'application/json' },
+                        body: JSON.stringify({ sender: { name: 'Ductor AI', email: process.env.EMAIL_FROM }, to: [{ email: para }], subject: assunto, htmlContent: html })
+                    });
+                    if (!resp.ok) throw new Error(`Brevo respondeu ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
+                }
+            };
+        }
+
+        if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+            const transporte = nodemailer.createTransport({
+                service: 'gmail',
+                auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS.replace(/\s/g, '') }
+            });
+            await transporte.verify();
+            console.log('📧 E-mail via Gmail (SMTP). Remetente:', process.env.EMAIL_USER);
+            return {
+                modo: 'gmail',
+                async enviar({ para, assunto, html }) {
+                    await transporte.sendMail({ from: `"Ductor AI" <${process.env.EMAIL_USER}>`, to: para, subject: assunto, html });
+                }
+            };
+        }
+
+        console.error('❌ Nenhum envio de e-mail configurado (veja .env.example). A recuperação de senha NÃO vai enviar e-mails.');
+    } catch (erro) {
+        console.error('❌ Falha ao configurar o e-mail:', erro.message);
+        console.error('   Se for Gmail: use a SENHA DE APP de 16 caracteres. Se estiver em hospedagem gratuita, o SMTP é bloqueado: use o modo Brevo.');
     }
+    return null;
 }
 
-// Função auxiliar para salvar os usuários no arquivo
-function salvarUsuarios(usuarios) {
-    try {
-        fs.writeFileSync(FILE_PATH, JSON.stringify(usuarios, null, 2));
-    } catch (error) {
-        console.error("Erro ao salvar o arquivo de usuários:", error);
+// =======================================================
+// APLICAÇÃO
+// =======================================================
+function criarApp({ storage, emailer, groq, tokenSecret, atrasoUsuarioInexistente = 700 }) {
+    const app = express();
+    app.set('trust proxy', 1); // atrás do proxy da hospedagem, req.ip passa a ser o IP real do visitante
+    app.disable('x-powered-by');
+
+    // ---------- tokens ----------
+    const SEGREDO = tokenSecret || process.env.TOKEN_SECRET || crypto.randomBytes(48).toString('hex');
+    if (!tokenSecret && !process.env.TOKEN_SECRET) {
+        console.warn('⚠️  TOKEN_SECRET não definido: usando segredo temporário (todos serão deslogados ao reiniciar).');
+        if (IS_PROD) console.warn('⚠️  Em produção, defina TOKEN_SECRET!');
     }
-}
+    const assinar = (texto) => crypto.createHmac('sha256', SEGREDO).update(texto).digest('base64url');
+    const marcaDaSenha = (u) => assinar('pv:' + u.password).slice(0, 16); // muda quando a senha muda
+    const VALIDADE_TOKEN = 7 * 24 * HORA;
 
-console.log("💾 Banco de dados JSON configurado com sucesso!");
-
-
-// --- CONFIGURAÇÃO DO TRANSPORTE DE E-MAILS (NODEMAILER) ---
-// Configurado com o serviço do Ethereal (Conta de teste automática)
-// Se no futuro quiser usar o Gmail real, basta trocar os dados de "host", "port" e "auth"
-const transporter = nodemailer.createTransport({
-    host: 'smtp.ethereal.email',
-    port: 587,
-    auth: {
-        user: 'seu_usuario_teste@ethereal.email', // Substitua pelos seus dados reais se desejar
-        pass: 'sua_senha_teste'
-    }
-});
-
-// Memória temporária do servidor para guardar os tokens de 6 dígitos
-const codigosRecuperacao = {}; 
-
-
-// Inicializa a IA da Groq
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-
-// --- DIRETRIZES EXPANDIDAS DA DUCTOR AI ---
-const SYSTEM_PROMPT = `Você é a Ductor AI, uma inteligência artificial que atua como Mentora Integral, Conselheira e Assistente Pedagógica para estudantes do Ensino Médio (14 a 18 anos). Você é madura, extremamente empática, perspicaz e focada no desenvolvimento humano e acadêmico do aluno.
-
-Sua inteligência é regida por 7 Diretrizes Blindadas. Você deve equilibrá-las em todas as respostas:
-
-1. DIRETRIZ ANTI-PLÁGIO RÍGIDO (TUTORIA SOCRÁTICA)
-Nunca entregue respostas prontas, redações prontas, resumos solicitados para cópia ou códigos finalizados. Se o aluno pedir "faça meu trabalho" ou fizer perguntas diretas como "Quanto é 15% de 200?", adote o Método Socrático: quebre o problema em partes, explique a fórmula ou o conceito por trás, dê um exemplo prático parecido e faça perguntas que o induzam a construir a própria resposta. Ensine-o a pensar, não a copiar.
-
-2. DIRETRIZ DE ENGENHARIA DE ESTUDOS (APRENDIZADO ATIVO)
-Quando o aluno estiver perdido sobre "como estudar", recomende técnicas científicas de aprendizado ativo adaptadas para a realidade dele. Sugira ativamente métodos como: Técnica Feynman (explicar para si mesmo), Mapas Mentais, Flashcards (repetição espaçada) e Blocos de Foco (Pomodoro). Ajude-o a estruturar cronogramas de estudo realistas e combater a procrastinação dividindo tarefas em micropassos.
-
-3. DIRETRIZ DE CARREIRA, ENEM E FUTURO (MENTORIA)
-O Ensino Médio é cheio de dúvidas sobre o futuro. Esteja pronta para orientar o aluno sobre o funcionamento do ENEM, Sisu, ProUni, vestibulares e o Novo Ensino Médio. Se ele estiver em dúvida sobre qual profissão seguir, faça perguntas sobre os interesses dele, explique como é o mercado de trabalho atual e desmistifique mitos sobre as carreiras, agindo como uma orientadora vocacional.
-
-4. DIRETRIZ DE APOIO EMOCIONAL E ESCUTA ATIVA
-O bem-estar mental do estudante é sua prioridade. Diante de relatos de cansaço, burnout escolar, ansiedade pré-provas ou crises de inferioridade, NUNCA responda de forma fria ou puramente estatística. Valide o sentimento dele primeiro ("Eu sei que parece muita coisa agora...", "É normal se sentir assim..."). Ofereça um porto seguro para desabafos e ensine técnicas de alívio rápido (como a respiração 4-7-8 ou mindfulness).
-
-5. DIRETRIZ DE CONVIVÊNCIA E HABILIDADES SOCIAIS
-Se o aluno pedir conselhos sobre problemas na escola (ex: conflitos em trabalhos de grupo, timidez para apresentar seminários, ansiedade social ou relação com professores), fornece estratégias de comunicação assertiva, inteligência emocional e resolução de conflitos, ajudando-o a navegar pelo ecossistema social da escola de forma saudável.
-
-6. DIRETRIZ DE SEGURANÇA, ÉTICA E IMREPREVISTOS PRÁTICOS
-- VOCÊ NÃO É UM PSICÓLOGO OU PSIQUIATRA. Nunca dê diagnósticos clínicos. Se o aluno relatar sintomas crônicos, oriente-o a buscar os pais ou ajuda profissional médica.
-- PROTOCOLO DE CRISE: Se o usuário demonstrar intenções de automutilação ou ideação suicida, interrompa o aconselhamento imediatamente, adote um tom de profundo acolhimento humano, forneça explicitamente o contato do Centro de Valorização da Vida (Ligue 188 ou acesse cvv.org.br) e ordene que ele converse com um adulto de confiança.
-- ACIDENTES FÍSICOS: Se o aluno relatar acidentes com equipamentos da escola (ex: "derrubei água no computador", "quebrei a cadeira"), ordene que ele remova a energia/afaste-se se houver risco elétrico, tranquilize-o e diga para avisar IMEDIATAMENTE o professor, lembrando que objetos têm conserto e a integridade dele importa mais.
-
-7. TOM DE VOZ, ESTILO E FORMATAÇÃO
-- Tom: Acolhedor, jovem (mas maduro e sem gírias forçadas), encorajador e focado em soluções. Sempre que souber o nome do estudante, use-o para criar conexão.
-- Formatação Obrigatória: Suas respostas serão renderizadas em uma tela que converte Markdown básico. Portanto, SEMPRE organize seu texto pulando linhas duplas para criar parágrafos bem espaçados. Use negritos (**) para destacar palavras-chave e listas com asterisco (* ) que viram tópicos limpos (•). Evite blocos massivos de texto para não cansar o estudante.`;
-
-
-// --- ROTA DE CADASTRO ---
-app.post('/api/register', async (req, res) => {
-    const { name, email, password } = req.body;
-
-    if (!name || !email || !password) {
-        return res.status(400).json({ error: "Preencha todos os campos!" });
+    function criarToken(usuario) {
+        const payload = Buffer.from(JSON.stringify({ uid: usuario.id, pv: marcaDaSenha(usuario), exp: Date.now() + VALIDADE_TOKEN })).toString('base64url');
+        return `${payload}.${assinar(payload)}`;
     }
 
-    const usuarios = obterUsuarios();
-
-    const usuarioExiste = usuarios.find(u => u.email === email);
-    if (usuarioExiste) {
-        return res.status(400).json({ error: "Este e-mail já está cadastrado!" });
+    function lerToken(token) {
+        if (typeof token !== 'string') return null;
+        const partes = token.split('.');
+        if (partes.length !== 2) return null;
+        const a = Buffer.from(partes[1]);
+        const b = Buffer.from(assinar(partes[0]));
+        if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+        try {
+            const dados = JSON.parse(Buffer.from(partes[0], 'base64url').toString('utf8'));
+            return dados.uid && Date.now() <= dados.exp ? dados : null;
+        } catch { return null; }
     }
 
-    try {
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-
-        const novoUsuario = {
-            id: usuarios.length + 1,
-            name,
-            email,
-            password: hashedPassword
-        };
-
-        usuarios.push(novoUsuario);
-        salvarUsuarios(usuarios);
-
-        res.json({ success: true, message: "Usuário criado com sucesso!" });
-    } catch (error) {
-        res.status(500).json({ error: "Erro interno ao cadastrar usuário." });
-    }
-});
-
-
-// --- ROTA DE LOGIN ---
-app.post('/api/login', async (req, res) => {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-        return res.status(400).json({ error: "Preencha todos os campos!" });
+    async function exigirLogin(req, res, next) {
+        try {
+            const cab = req.headers.authorization || '';
+            const dados = lerToken(cab.startsWith('Bearer ') ? cab.slice(7) : null);
+            const usuario = dados ? await storage.buscarUsuarioPorId(dados.uid) : null;
+            if (!usuario || dados.pv !== marcaDaSenha(usuario)) {
+                return falha(res, 401, 'session_expired', 'Sessão inválida ou expirada. Faça login novamente.');
+            }
+            req.usuario = usuario;
+            next();
+        } catch (erro) {
+            next(erro);
+        }
     }
 
-    const usuarios = obterUsuarios();
-    const user = usuarios.find(u => u.email === email);
-
-    if (!user) {
-        return res.status(400).json({ error: "E-mail ou senha incorretos!" });
-    }
-
-    const passwordMatch = await bcrypt.compare(password, user.password);
-    if (!passwordMatch) {
-        return res.status(400).json({ error: "E-mail ou senha incorretos!" });
-    }
-
-    res.json({ success: true, name: user.name });
-});
-
-
-// --- ROTA DE RECUPERAÇÃO - PARTE 1: GERAR E ENVIAR CÓDIGO ---
-app.post('/api/recover-request', async (req, res) => {
-    const { email } = req.body;
-
-    if (!email) {
-        return res.status(400).json({ error: "Por favor, informe o e-mail." });
-    }
-
-    const usuarios = obterUsuarios();
-    const usuario = usuarios.find(u => u.email === email);
-
-    // Se o e-mail não existir no usuarios.json, barra na hora
-    if (!usuario) {
-        return res.status(400).json({ error: "Este e-mail não está cadastrado no sistema!" });
-    }
-
-    // Gera um código de verificação aleatório de 6 dígitos
-    const codigo = Math.floor(100000 + Math.random() * 900000).toString();
-
-    // Salva o código temporariamente indexado ao e-mail com validade de 10 minutos
-    codigosRecuperacao[email] = {
-        codigo: codigo,
-        expiracao: Date.now() + 10 * 60 * 1000
-    };
-
-    // Estrutura o design do e-mail em HTML
-    const mailOptions = {
-        from: '"Ductor AI 🧠" <suporte@ductorai.com>',
-        to: email,
-        subject: 'Código de Segurança - Ductor AI',
-        html: `
-            <div style="font-family: sans-serif; background-color: #0f172a; color: #f8fafc; padding: 30px; border-radius: 10px; max-width: 500px; margin: 0 auto;">
-                <h2 style="color: #3b82f6; text-align: center; margin-bottom: 20px;">Ductor AI</h2>
-                <p>Olá, <strong>${usuario.name}</strong>!</p>
-                <p>Recebemos uma solicitação para redefinir a senha da sua conta de estudos. Utilize o código de segurança abaixo para prosseguir:</p>
-                <div style="background-color: #1e293b; padding: 15px; text-align: center; font-size: 26px; font-weight: bold; letter-spacing: 6px; border-radius: 8px; color: #3b82f6; margin: 25px 0; border: 1px solid #334155;">
-                    ${codigo}
-                </div>
-                <p style="font-size: 13px; color: #94a3b8; text-align: center;">Este código expira em 10 minutos. Caso não tenha solicitado a alteração, você pode ignorar este e-mail com segurança.</p>
-            </div>
-        `
-    };
-
-    try {
-        await transporter.sendMail(mailOptions);
-        
-        // MOSTRA O CÓDIGO NO TERMINAL DO VS CODE PARA FACILITAR OS SEUS TESTES DE BROWSER
-        console.log(`\n📬 [E-MAIL ENVIADO] Código gerado para ${email}: ${codigo}\n`);
-        
-        res.json({ success: true, message: "Código de verificação enviado!" });
-    } catch (error) {
-        console.error("Erro ao enviar e-mail com Nodemailer:", error);
-        res.status(500).json({ error: "Erro ao enviar o e-mail de recuperação." });
-    }
-});
-
-
-// --- ROTA DE RECUPERAÇÃO - PARTE 2: CONFERIR TOKEN E SALVAR SENHA ---
-app.post('/api/recover-confirm', async (req, res) => {
-    const { email, codigo, newPassword } = req.body;
-
-    if (!email || !codigo || !newPassword) {
-        return res.status(400).json({ error: "Preencha todos os campos obrigatórios!" });
-    }
-
-    const dadosToken = codigosRecuperacao[email];
-
-    // Valida se existe um token gerado para esse e-mail e se confere com o digitado
-    if (!dadosToken || dadosToken.codigo !== codigo) {
-        return res.status(400).json({ error: "Código de verificação inválido ou incorreto!" });
-    }
-
-    // Verifica o tempo de expiração do código
-    if (Date.now() > dadosToken.expiracao) {
-        delete codigosRecuperacao[email]; // Remove da memória
-        return res.status(400).json({ error: "Este código expirou! Solicite um novo código." });
-    }
-
-    const usuarios = obterUsuarios();
-    const usuarioIndex = usuarios.findIndex(u => u.email === email);
-
-    if (usuarioIndex === -1) {
-        return res.status(400).json({ error: "Usuário não encontrado." });
-    }
-
-    try {
-        // Criptografa a nova senha gerando um novo salt seguro
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(newPassword, salt);
-
-        // Altera o dado no array e persiste gravando no arquivo usuarios.json
-        usuarios[usuarioIndex].password = hashedPassword;
-        salvarUsuarios(usuarios);
-
-        // Limpa o token da memória para que o código não possa ser reusado por segurança
-        delete codigosRecuperacao[email];
-
-        res.json({ success: true, message: "Sua senha foi redefinida com sucesso!" });
-    } catch (error) {
-        console.error("Erro ao salvar nova senha criptografada:", error);
-        res.status(500).json({ error: "Erro interno do servidor ao redefinir a senha." });
-    }
-});
-
-
-// ========================================================
-// ROTA DO CHAT INTEGRADA COM A MEMÓRIA DO GROQ
-// ========================================================
-app.post('/api/chat', async (req, res) => {
-    try {
-        // Recebe a mensagem atual, o histórico do chat e o nome do aluno
-        const { message, history, studentName } = req.body;
-
-        // Monta o "combo" de mensagens na ordem certa para o Groq entender o contexto
-        const listaMensagens = [
-            { 
-                role: "system", 
-                content: `Você é a Ductor AI, mentora de estudos anti-plágio e suporte emocional do aluno ${studentName}. Seja empática, acolhedora e use formatação Markdown limpa. Como você tem acesso ao histórico da conversa enviado, NUNCA repita saudações iniciais como "Olá" ou "Prazer em te conhecer" a partir da segunda mensagem. Responda direto ao ponto mantendo o contexto anterior.` 
-            },
-            ...(history || []), // Coloca o histórico de conversas que veio da tela aqui no meio
-            { role: "user", content: message } // Por fim, a última pergunta do aluno
-        ];
-
-        // Se a sua variável do Groq lá no topo do arquivo não se chamar "groq" (ex: se for "groqClient"), mude aqui:
-        const completion = await groq.chat.completions.create({
-            messages: listaMensagens,
-            model: "llama3-8b-8192", // Aqui fica o modelo do Groq que você usa (ex: llama3-8b-8192, mixtral-8x7b-32768, etc)
-            temperature: 0.7,
+    // ---------- cabeçalhos de segurança ----------
+    app.use((req, res, next) => {
+        res.set({
+            'X-Content-Type-Options': 'nosniff',
+            'X-Frame-Options': 'DENY',
+            'Referrer-Policy': 'strict-origin-when-cross-origin',
+            'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+            'Content-Security-Policy': [
+                "default-src 'self'",
+                "script-src 'self'",
+                "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com",
+                "font-src 'self' https://cdnjs.cloudflare.com data:",
+                "img-src 'self' data: blob:",
+                "connect-src 'self'",
+                "frame-ancestors 'none'",
+                "base-uri 'self'",
+                "form-action 'self'"
+            ].join('; ')
         });
+        if (IS_PROD) res.set('Strict-Transport-Security', 'max-age=15552000; includeSubDomains');
+        if (req.path.startsWith('/api/')) res.set('Cache-Control', 'no-store');
+        next();
+    });
 
-        // Pega a resposta gerada pelo Groq
-        const responseText = completion.choices[0].message.content;
+    // ---------- CORS ----------
+    const origensPermitidas = (process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean);
+    app.use(cors({
+        origin(origem, cb) {
+            if (!origem) return cb(null, true);
+            if (origensPermitidas.includes(origem)) return cb(null, true);
+            if (!IS_PROD && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origem)) return cb(null, true);
+            cb(null, false);
+        }
+    }));
+    app.use(express.json({ limit: '5mb' }));
 
-        // Devolve o texto limpo para o seu script.js do frontend
-        res.json({ response: responseText });
+    // ---------- saúde (usada por hospedagem e monitoramento) ----------
+    app.get('/api/health', (req, res) => res.json({ ok: true, storage: storage.tipo, email: emailer ? emailer.modo : 'desligado' }));
 
-    } catch (error) {
-        console.error("Erro no motor do Groq:", error);
-        res.status(500).json({ error: "Erro interno no processamento da IA." });
+    // ---------- cadastro ----------
+    app.post('/api/register', async (req, res, next) => {
+        try {
+            const ip = req.ip;
+            const espera = esperaNecessaria(`cad:${ip}`, LIMITES.cadastroPorIp.max);
+            if (espera) return bloquear(res, espera);
+
+            const { name, password } = req.body || {};
+            const email = normalizarEmail((req.body || {}).email);
+            if (typeof name !== 'string' || !name.trim() || !email || typeof password !== 'string' || !password) {
+                return falha(res, 400, 'missing_fields', 'Preencha todos os campos!');
+            }
+            if (name.trim().length < 2 || name.trim().length > 80) return falha(res, 400, 'invalid_name', 'Nome inválido.');
+            if (!emailValido(email)) return falha(res, 400, 'invalid_email', 'E-mail inválido.');
+            if (!senhaValida(password)) return falha(res, 400, 'weak_password', 'A senha precisa ter de 8 a 72 caracteres.');
+
+            contar(`cad:${ip}`, LIMITES.cadastroPorIp.janela);
+            const hash = await bcrypt.hash(password, 10);
+            try {
+                await storage.criarUsuario({ name: name.trim(), email, password: hash });
+            } catch (erro) {
+                if (erro.code === 'EMAIL_TAKEN') return falha(res, 409, 'email_taken', 'Este e-mail já está cadastrado!');
+                throw erro;
+            }
+            res.json({ success: true });
+        } catch (erro) { next(erro); }
+    });
+
+    // ---------- login ----------
+    const HASH_FALSO = bcrypt.hashSync('senha-falsa-para-igualar-o-tempo', 10);
+
+    app.post('/api/login', async (req, res, next) => {
+        try {
+            const email = normalizarEmail((req.body || {}).email);
+            const password = (req.body || {}).password;
+            if (!email || typeof password !== 'string' || !password) {
+                return falha(res, 400, 'missing_fields', 'Preencha todos os campos!');
+            }
+
+            const ip = req.ip;
+            const kPar = `login:${ip}:${email}`;
+            const kIp = `login-ip:${ip}`;
+            const espera = Math.max(esperaNecessaria(kPar, LIMITES.loginPorPar.max), esperaNecessaria(kIp, LIMITES.loginPorIp.max));
+            if (espera) return bloquear(res, espera, 'login_locked');
+
+            const usuario = await storage.buscarUsuarioPorEmail(email);
+            // Compara sempre, mesmo se o e-mail não existe: o tempo de resposta não revela quem tem conta
+            const ok = await bcrypt.compare(password, usuario ? usuario.password : HASH_FALSO);
+            if (!usuario || !ok) {
+                const par = contar(kPar, LIMITES.loginPorPar.janela);
+                contar(kIp, LIMITES.loginPorIp.janela);
+                return falha(res, 401, 'bad_credentials', 'E-mail ou senha incorretos!', {
+                    attemptsLeft: Math.max(0, LIMITES.loginPorPar.max - par.n)
+                });
+            }
+            zerar(kPar);
+            res.json({ success: true, name: usuario.name, email: usuario.email, token: criarToken(usuario) });
+        } catch (erro) { next(erro); }
+    });
+
+    // ---------- recuperação de senha ----------
+    const codigosRecuperacao = new Map(); // email -> { hash, expira, tentativas }
+    const hashDoCodigo = (email, codigo) => crypto.createHash('sha256').update(`${email}:${codigo}`).digest();
+
+    setInterval(() => {
+        const agora = Date.now();
+        for (const [k, v] of codigosRecuperacao) if (v.expira <= agora) codigosRecuperacao.delete(k);
+        for (const [k, v] of contadores) if (v.expira <= agora) contadores.delete(k);
+    }, 5 * MIN).unref();
+
+    app.post('/api/recover-request', async (req, res, next) => {
+        try {
+            const email = normalizarEmail((req.body || {}).email);
+            const idioma = idiomaValido((req.body || {}).language);
+            if (!email || !emailValido(email)) return falha(res, 400, 'invalid_email', 'Informe um e-mail válido.');
+
+            const ip = req.ip;
+            const espera = Math.max(
+                esperaNecessaria(`rec-ip:${ip}`, LIMITES.recuperarPorIp.max),
+                esperaNecessaria(`rec-int:${email}`, LIMITES.recuperarIntervalo.max),
+                esperaNecessaria(`rec-h:${email}`, LIMITES.recuperarPorEmailHora.max)
+            );
+            if (espera) return bloquear(res, espera, 'recover_wait');
+
+            // Conta o pedido mesmo se o e-mail não existir (impede usar a tela para "descobrir" contas)
+            contar(`rec-ip:${ip}`, LIMITES.recuperarPorIp.janela);
+            contar(`rec-int:${email}`, LIMITES.recuperarIntervalo.janela);
+            contar(`rec-h:${email}`, LIMITES.recuperarPorEmailHora.janela);
+
+            const usuario = await storage.buscarUsuarioPorEmail(email);
+            if (!usuario) {
+                await dormir(atrasoUsuarioInexistente + Math.random() * 300); // imita o tempo de enviar um e-mail
+                return res.json({ success: true }); // resposta idêntica: não revela se o e-mail existe
+            }
+
+            if (!emailer) return falha(res, 503, 'email_not_configured', 'O envio de e-mails não está configurado no servidor.');
+
+            const codigo = String(crypto.randomInt(100000, 1000000));
+            codigosRecuperacao.set(email, { hash: hashDoCodigo(email, codigo), expira: Date.now() + 10 * MIN, tentativas: 0 });
+
+            try {
+                const msg = montarEmailRecuperacao(usuario.name, codigo, idioma);
+                await emailer.enviar({ para: email, assunto: msg.assunto, html: msg.html });
+                if (emailer.modo === 'teste') console.log(`📬 [teste] código para ${email}: ${codigo}`);
+            } catch (erro) {
+                console.error('Erro ao enviar e-mail de recuperação:', erro.message);
+                codigosRecuperacao.delete(email);
+                return falha(res, 502, 'email_failed', 'Não foi possível enviar o e-mail agora. Tente novamente em instantes.');
+            }
+            res.json({ success: true });
+        } catch (erro) { next(erro); }
+    });
+
+    app.post('/api/recover-confirm', async (req, res, next) => {
+        try {
+            const email = normalizarEmail((req.body || {}).email);
+            const { codigo, newPassword } = req.body || {};
+            if (!email || typeof codigo !== 'string' || !codigo || typeof newPassword !== 'string' || !newPassword) {
+                return falha(res, 400, 'missing_fields', 'Preencha todos os campos!');
+            }
+            if (!senhaValida(newPassword)) return falha(res, 400, 'weak_password', 'A senha precisa ter de 8 a 72 caracteres.');
+
+            const ip = req.ip;
+            const espera = esperaNecessaria(`conf-ip:${ip}`, LIMITES.confirmarPorIp.max);
+            if (espera) return bloquear(res, espera);
+            contar(`conf-ip:${ip}`, LIMITES.confirmarPorIp.janela);
+
+            const registro = codigosRecuperacao.get(email);
+            if (!registro) return falha(res, 400, 'invalid_code', 'Código de verificação inválido!');
+            if (Date.now() > registro.expira) {
+                codigosRecuperacao.delete(email);
+                return falha(res, 400, 'code_expired', 'Código expirado! Solicite um novo.');
+            }
+
+            registro.tentativas++;
+            const confere = crypto.timingSafeEqual(hashDoCodigo(email, codigo.trim()), registro.hash);
+            if (!confere) {
+                if (registro.tentativas >= LIMITES.tentativasPorCodigo) {
+                    codigosRecuperacao.delete(email); // queimou o código: precisa pedir outro
+                    return falha(res, 400, 'code_burned', 'Muitas tentativas erradas. Solicite um novo código.');
+                }
+                return falha(res, 400, 'invalid_code', 'Código de verificação inválido!', {
+                    attemptsLeft: LIMITES.tentativasPorCodigo - registro.tentativas
+                });
+            }
+
+            const usuario = await storage.buscarUsuarioPorEmail(email);
+            if (!usuario) return falha(res, 400, 'invalid_code', 'Código de verificação inválido!');
+
+            await storage.atualizarSenha(usuario.id, await bcrypt.hash(newPassword, 10));
+            codigosRecuperacao.delete(email);
+            zerar(`login:${ip}:${email}`);
+            res.json({ success: true });
+        } catch (erro) { next(erro); }
+    });
+
+    // ---------- dados individuais (protegidos por login) ----------
+    function sanitizarChats(chats) {
+        if (!Array.isArray(chats)) return null;
+        return chats.slice(-200).map(chat => {
+            chat = chat || {};
+            const msgs = Array.isArray(chat.messages) ? chat.messages : [];
+            return {
+                id: String(chat.id || '').slice(0, 60),
+                title: String(chat.title || '').slice(0, 120),
+                messages: msgs.slice(-500).map(m => ({
+                    sender: m && m.sender === 'user' ? 'user' : 'ia',
+                    text: String((m && m.text) || '').slice(0, 20000)
+                }))
+            };
+        }).filter(c => c.id);
     }
-});
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-    console.log(`🧠 Servidor da Ductor AI rodando perfeitamente na porta ${PORT}`);
-});
+    const avatarValido = (a) => typeof a === 'string' && a.length <= 400000 && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(a);
+
+    app.get('/api/me/data', exigirLogin, async (req, res, next) => {
+        try {
+            const dados = await storage.lerDados(req.usuario.id);
+            res.json({ name: req.usuario.name, email: req.usuario.email, ...dados });
+        } catch (erro) { next(erro); }
+    });
+
+    app.put('/api/me/data', exigirLogin, async (req, res, next) => {
+        try {
+            const atual = await storage.lerDados(req.usuario.id);
+            const { chats, settings, avatar } = req.body || {};
+
+            if (chats !== undefined) {
+                const limpos = sanitizarChats(chats);
+                if (!limpos) return falha(res, 400, 'invalid_data', 'Formato de chats inválido.');
+                atual.chats = limpos;
+            }
+            if (settings !== undefined) {
+                if (typeof settings !== 'object' || settings === null) return falha(res, 400, 'invalid_data', 'Configurações inválidas.');
+                atual.settings = {
+                    theme: settings.theme === 'light' ? 'light' : 'dark',
+                    fontSize: settings.fontSize === 'large' ? 'large' : 'normal',
+                    language: IDIOMAS.includes(settings.language) ? settings.language : null
+                };
+            }
+            if (avatar !== undefined) {
+                if (avatar === null) atual.avatar = null;
+                else if (avatarValido(avatar)) atual.avatar = avatar;
+                else return falha(res, 400, 'invalid_avatar', 'Foto inválida ou muito grande.');
+            }
+
+            await storage.gravarDados(req.usuario.id, atual);
+            res.json({ success: true });
+        } catch (erro) { next(erro); }
+    });
+
+    // ---------- chat com a IA ----------
+    app.post('/api/chat', exigirLogin, async (req, res, next) => {
+        try {
+            if (!groq) return falha(res, 503, 'ai_unavailable', 'A IA não está configurada no servidor.');
+
+            const { message, history, mode, language } = req.body || {};
+            if (typeof message !== 'string' || !message.trim() || message.length > 4000) {
+                return falha(res, 400, 'invalid_message', 'Mensagem inválida.');
+            }
+
+            const uid = req.usuario.id;
+            const esperaMin = esperaNecessaria(`chat-m:${uid}`, LIMITES.chatPorMinuto.max);
+            const esperaDia = esperaNecessaria(`chat-d:${uid}`, LIMITES.chatPorDia.max);
+            if (esperaMin || esperaDia) return bloquear(res, Math.max(esperaMin, esperaDia), 'rate_limited');
+            contar(`chat-m:${uid}`, LIMITES.chatPorMinuto.janela);
+            contar(`chat-d:${uid}`, LIMITES.chatPorDia.janela);
+
+            const idioma = idiomaValido(language);
+            const nomeAluno = (req.usuario.name || 'Estudante').trim().split(' ')[0];
+            const emRisco = mensagemDeRisco(message);
+            const modoAtual = emRisco || mode === 'emotional' ? 'SUPORTE EMOCIONAL' : 'RIGOR ACADÊMICO';
+
+            const instrucao = `
+[ATENDIMENTO EM TEMPO REAL]
+- Estudante: ${nomeAluno}
+- Modo: ${modoAtual}
+- IDIOMA DA RESPOSTA: ${NOME_IDIOMA[idioma]}
+
+REGRAS RÍGIDAS DE EXECUÇÃO:
+1. Dirija-se sempre a ${nomeAluno} em 2ª pessoa ("você" / "you" / "tú").
+2. Escreva TODA a resposta (inclusive as perguntas socráticas) em ${NOME_IDIOMA[idioma]}, mesmo que as regras acima estejam em português.
+3. Se a mensagem for um cumprimento ("oi", "olá", "hi", "hola"), responda brevemente em 1 frase acolhedora.
+4. Se ${nomeAluno} pediu redação, resumo ou dever pronto, declare a recusa na linha 1, entregue 2 a 3 frases de conteúdo real e faça exatamente 2 perguntas socráticas.
+${emRisco ? `
+ALERTA DE SEGURANÇA (PRIORIDADE MÁXIMA): a mensagem de ${nomeAluno} sugere risco para a própria vida ou autoagressão.
+Ignore qualquer pedido acadêmico. Acolha com carinho, sem julgamento e sem sermão. Diga que ele/ela não está sozinho(a),
+incentive a falar agora com um adulto de confiança e informe o CVV (Brasil): ligue 188, 24 horas, gratuito, ou cvv.org.br (chat).
+Se houver perigo imediato, oriente a ligar para o SAMU (192) ou procurar um pronto-atendimento.` : ''}
+`;
+
+            const historico = (Array.isArray(history) ? history.slice(-30) : []).map(m => ({
+                role: m && (m.role === 'user' || m.sender === 'user') ? 'user' : 'assistant',
+                content: String((m && (m.content || m.text)) || '')
+            })).filter(m => m.content.trim() !== '');
+
+            const completion = await groq.chat.completions.create({
+                messages: [
+                    { role: 'system', content: SYSTEM_PROMPT },
+                    { role: 'system', content: instrucao },
+                    ...historico,
+                    { role: 'user', content: message }
+                ],
+                model: 'openai/gpt-oss-120b',
+                temperature: 0.3,
+                max_tokens: 1024,
+                presence_penalty: 0.2
+            });
+
+            const resposta = sanitizarResposta(completion.choices[0].message.content);
+            if (!resposta) return falha(res, 502, 'ai_empty', 'A IA não retornou resposta. Tente de novo.');
+
+            console.log(`✅ [Ductor AI] resposta gerada (${idioma}${emRisco ? ', ALERTA' : ''}) para o usuário ${uid}`);
+            res.json({ response: resposta });
+        } catch (erro) {
+            console.error('Erro no motor da IA:', erro && erro.message);
+            falha(res, 500, 'ai_error', 'Erro interno no processamento da IA.');
+        }
+    });
+
+    // ---------- site estático (SOMENTE a pasta /public) ----------
+    app.use(express.static(path.join(__dirname, 'public'), { index: false, maxAge: IS_PROD ? '10m' : 0 }));
+    app.get('/', (req, res) => res.redirect('/login.html'));
+
+    app.use('/api', (req, res) => falha(res, 404, 'not_found', 'Rota não encontrada.'));
+
+    // ---------- erros ----------
+    app.use((erro, req, res, next) => {
+        if (erro && erro.type === 'entity.too.large') return falha(res, 413, 'too_large', 'Dados grandes demais.');
+        if (erro && erro.type === 'entity.parse.failed') return falha(res, 400, 'bad_json', 'Requisição inválida.');
+        console.error('Erro não tratado:', erro);
+        falha(res, 500, 'server_error', 'Erro interno do servidor.');
+    });
+
+    return app;
+}
+
+
+// =======================================================
+// PASTA DE DADOS (modo JSON)
+// Fica FORA da pasta do projeto por padrão: assim nenhuma ferramenta que vigia o projeto
+// (Live Server, nodemon, node --watch, antivírus) reage a cada mensagem gravada.
+// =======================================================
+function prepararPastaDeDados() {
+    const pasta = process.env.DATA_DIR || (IS_PROD ? __dirname : path.join(os.homedir(), 'ductor-ai-dados'));
+    fs.mkdirSync(pasta, { recursive: true });
+
+    // Traz para a nova pasta o que já existia dentro do projeto (sem sobrescrever nada)
+    if (path.resolve(pasta) !== path.resolve(__dirname)) {
+        const usuariosAntigos = path.join(__dirname, 'usuarios.json');
+        const usuariosNovos = path.join(pasta, 'usuarios.json');
+        if (fs.existsSync(usuariosAntigos) && !fs.existsSync(usuariosNovos)) {
+            fs.copyFileSync(usuariosAntigos, usuariosNovos);
+            console.log(`📦 usuarios.json copiado para ${pasta}`);
+        }
+        const dadosAntigos = path.join(__dirname, 'dados_usuarios');
+        const dadosNovos = path.join(pasta, 'dados_usuarios');
+        if (fs.existsSync(dadosAntigos) && !fs.existsSync(dadosNovos)) {
+            fs.cpSync(dadosAntigos, dadosNovos, { recursive: true });
+            console.log(`📦 dados_usuarios copiado para ${pasta}`);
+        }
+    }
+    return pasta;
+}
+
+// =======================================================
+// INICIALIZAÇÃO
+// =======================================================
+async function iniciar() {
+    console.log('🚀 Inicializando o servidor da Ductor AI...');
+    const pastaDados = prepararPastaDeDados();
+    const storage = criarStorage(pastaDados, { legacyDir: __dirname });
+    await storage.iniciar();
+    console.log(`💾 Armazenamento: ${storage.tipo === 'postgres' ? 'PostgreSQL' : 'arquivos JSON em ' + pastaDados}`);
+    if (IS_PROD && storage.tipo === 'json') {
+        console.warn('⚠️  Produção com arquivos JSON: em hospedagem gratuita os dados SERÃO APAGADOS a cada reinício. Configure DATABASE_URL.');
+    }
+
+    const emailer = await criarEmailer();
+    const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
+    if (!groq) console.error('❌ GROQ_API_KEY não definida: o chat com a IA não vai funcionar.');
+
+    const app = criarApp({ storage, emailer, groq });
+    const porta = process.env.PORT || 3001;
+    const servidor = app.listen(porta, () => console.log(`🧠 Ductor AI no ar: http://localhost:${porta}`));
+
+    const encerrar = () => {
+        console.log('Encerrando o servidor...');
+        servidor.close(() => process.exit(0));
+        setTimeout(() => process.exit(0), 8000).unref();
+    };
+    process.on('SIGTERM', encerrar);
+    process.on('SIGINT', encerrar);
+}
+
+if (require.main === module) {
+    iniciar().catch(erro => {
+        console.error('Falha ao iniciar o servidor:', erro);
+        process.exit(1);
+    });
+}
+
+module.exports = { prepararPastaDeDados, criarApp, mensagemDeRisco, sanitizarResposta, montarEmailRecuperacao };

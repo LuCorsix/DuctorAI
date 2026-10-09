@@ -1,466 +1,620 @@
 /**
  * =========================================================================
- * DUCTOR AI - MOTOR DE INTEGRAÇÃO INTEGRAL E GERENCIAMENTO DO PAINEL
- * Modo Capricho Ativado: Estrutura 100% Completa, Expandida e Comentada.
- * Suporta Conexão Real (Porta 3001) + Formatador de Respostas Espaçadas.
+ * DUCTOR AI - PAINEL DO ALUNO
+ * Chat, histórico, perfil (com recorte de foto), temas, idiomas e sessão.
+ * Todos os dados do aluno ficam no servidor, ligados à conta dele.
  * =========================================================================
  */
+const { t, tErro } = window.i18n;
 
 // ==========================================
-// 1. CONFIGURAÇÕES GERAIS DO SISTEMA
+// 1. SESSÃO PROTEGIDA
 // ==========================================
-// Alinhado perfeitamente na porta 3001 do seu ecossistema Node.js
-const BACKEND_API_URL = 'http://localhost:3001/api/chat'; 
+const API_BASE = window.API_BASE;
+const BACKEND_API_URL = `${API_BASE}/chat`;
 
+// Sem token = sem acesso: volta para o login
+if (!localStorage.getItem('authToken')) {
+    window.location.replace('login.html');
+}
+
+function encerrarSessaoLocal() {
+    ['authToken', 'userName', 'userEmail'].forEach(chave => localStorage.removeItem(chave));
+    sessionStorage.removeItem('ductorChatAtual');
+    window.location.replace('login.html');
+}
+
+// fetch que sempre envia o token; se o servidor disser que a sessão é inválida, desloga
+async function authFetch(url, options = {}) {
+    const resposta = await fetch(url, {
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...(options.headers || {}),
+            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+        }
+    });
+    if (resposta.status === 401) {
+        encerrarSessaoLocal();
+        throw new Error('session_expired');
+    }
+    return resposta;
+}
 
 // ==========================================
-// 2. MAPEAMENTO DE ELEMENTOS DO DOM
+// 2. ELEMENTOS DA TELA
 // ==========================================
-const chatForm = document.getElementById('chat-form');
-const userInput = document.getElementById('user-input');
-const chatMessages = document.getElementById('chat-messages');
-const sendBtn = document.getElementById('send-btn');
+const $ = (id) => document.getElementById(id);
 
-// Elementos de Modais
-const settingsModal = document.getElementById('settings-modal');
-const profileModal = document.getElementById('profile-modal');
+const chatForm = $('chat-form');
+const userInput = $('user-input');
+const chatMessages = $('chat-messages');
+const sendBtn = $('send-btn');
+const newChatBtn = $('new-chat-btn');
+const logoutBtn = $('logout-btn');
+const historyList = $('chat-history-list');
+const sidebar = $('sidebar');
+const sidebarBackdrop = $('sidebar-backdrop');
 
-// Botões de Controle de Modais
-const settingsBtn = document.getElementById('settings-btn');
-const profileBtn = document.getElementById('profile-btn');
-const closeSettingsBtn = document.getElementById('close-settings-btn');
-const closeProfileBtn = document.getElementById('close-profile-btn');
+const settingsModal = $('settings-modal');
+const profileModal = $('profile-modal');
+const themeSelector = $('theme-selector');
+const fontSizeSelector = $('font-size-selector');
+const languageSelector = $('language-selector');
 
-// Seletores de Preferências do Aluno
-const themeSelector = document.getElementById('theme-selector');
-const fontSizeSelector = document.getElementById('font-size-selector');
-
-// Outros Controles da Interface Lateral
-const newChatBtn = document.getElementById('new-chat-btn');
-const logoutBtn = document.getElementById('logout-btn');
-
+const displayNomeSidebar = $('user-display-name');
+const displayNomeModal = $('modal-profile-name');
+const avatarSidebar = $('profile-avatar');
+const avatarModal = $('modal-profile-avatar');
+const fileInput = $('avatar-upload-input');
+const removePhotoBtn = $('remove-photo-btn');
 
 // ==========================================
-// 3. SISTEMA DE STREAMING COM FORMATADOR ACADÊMICO
+// 3. ESTADO DO USUÁRIO + SALVAMENTO NO SERVIDOR
 // ==========================================
-/**
- * Renderiza o texto recebido respeitando parágrafos, negritos e listas da IA.
- * @param {HTMLElement} element - O container do balão de mensagem da IA.
- * @param {string} text - O texto cru vindo do Gemini/Backend.
- * @param {number} speed - Velocidade da digitação.
- */
-function streamResponseEffect(element, text, speed = 25) {
-    
-    // --- PARSER DE MARKDOWN INTEGRADO ---
-    // Prepara o texto processando as quebras de linha e marcações antes de fatiar em palavras
-    const formattedText = text
-        .replace(/\n\n/g, ' <br><br> ')                          // Transforma parágrafos duplos em espaçamentos reais
-        .replace(/\n/g, ' <br> ')                               // Transforma quebras simples em saltos de linha
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')      // Transforma **texto** em Negrito de verdade
-        .replace(/\* /g, '• ')                                 // Transforma marcadores de lista em tópicos limpos
+const estadoUsuario = {
+    carregado: false, // só vira true depois de baixar os dados; evita sobrescrever dados reais por engano
+    chats: [],
+    settings: { theme: 'dark', fontSize: 'normal', language: null },
+    avatar: null
+};
+let chatAtualId = null;
+let aguardandoResposta = false;
+
+// Fila: garante que os salvamentos cheguem ao servidor na mesma ordem em que foram feitos
+let filaDeSalvamento = Promise.resolve();
+function salvarNoServidor(parcial) {
+    filaDeSalvamento = filaDeSalvamento
+        .then(() => authFetch(`${API_BASE}/me/data`, { method: 'PUT', body: JSON.stringify(parcial) }))
+        .then(resposta => {
+            if (!resposta.ok) {
+                console.error('Falha ao salvar dados:', resposta.status);
+                mostrarToast(t('sync.error'), 'error');
+            }
+        })
+        .catch(erro => {
+            if (erro.message === 'session_expired') return;
+            console.error('Erro ao salvar dados:', erro);
+            mostrarToast(t('sync.error'), 'error');
+        });
+    return filaDeSalvamento;
+}
+
+// ==========================================
+// 4. COMPONENTES: AVISO (TOAST) E CONFIRMAÇÃO
+// ==========================================
+function mostrarToast(texto, tipo = 'info') {
+    const caixa = $('toast-container');
+    const el = document.createElement('div');
+    el.className = `toast ${tipo}`;
+    el.textContent = texto;
+    caixa.appendChild(el);
+    setTimeout(() => el.remove(), 4500);
+}
+
+function confirmar(texto) {
+    return new Promise((resolve) => {
+        const modal = $('confirm-modal');
+        $('confirm-text').textContent = texto;
+        modal.classList.add('open');
+        $('confirm-cancel').focus();
+
+        const encerrar = (resultado) => {
+            modal.classList.remove('open');
+            $('confirm-ok').removeEventListener('click', ok);
+            $('confirm-cancel').removeEventListener('click', cancelar);
+            modal.removeEventListener('click', fora);
+            document.removeEventListener('keydown', tecla);
+            resolve(resultado);
+        };
+        const ok = () => encerrar(true);
+        const cancelar = () => encerrar(false);
+        const fora = (e) => { if (e.target === modal) encerrar(false); };
+        const tecla = (e) => { if (e.key === 'Escape') encerrar(false); };
+
+        $('confirm-ok').addEventListener('click', ok);
+        $('confirm-cancel').addEventListener('click', cancelar);
+        modal.addEventListener('click', fora);
+        document.addEventListener('keydown', tecla);
+    });
+}
+
+// ==========================================
+// 5. CAIXA DE TEXTO
+// ==========================================
+userInput.addEventListener('input', function () {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 160) + 'px';
+});
+
+userInput.addEventListener('keydown', function (event) {
+    // Enter envia, Shift+Enter quebra linha (ignora Enter de teclados com composição, como japonês)
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+        event.preventDefault();
+        chatForm.requestSubmit();
+    }
+});
+
+// ==========================================
+// 6. FORMATAÇÃO E EFEITO DE DIGITAÇÃO
+// ==========================================
+function escapeHtml(texto) {
+    return String(texto)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+// Sempre escapa o HTML primeiro: texto da IA ou do aluno nunca vira código executável
+function parseMarkdown(text) {
+    return escapeHtml(text)
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+        .replace(/^[ \t]*[*-] /gm, '• ')
+        .replace(/\n/g, '<br>')
         .trim();
+}
 
-    // Divide o texto por espaços, mas preserva as tags HTML intactas
-    const words = formattedText.split(/ +/);
-    let wordIndex = 0;
+const prefereMenosMovimento = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function streamResponseEffect(element, text, speed = 20) {
+    if (prefereMenosMovimento) {
+        element.innerHTML = parseMarkdown(text);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        return Promise.resolve();
+    }
     element.innerHTML = '';
+    const words = text.split(' ');
+    let i = 0;
+    let acumulado = '';
 
     return new Promise((resolve) => {
-        const interval = setInterval(() => {
-            if (wordIndex < words.length) {
-                element.innerHTML += words[wordIndex] + ' ';
+        const intervalo = setInterval(() => {
+            if (i < words.length) {
+                acumulado += (i === 0 ? '' : ' ') + words[i];
+                element.innerHTML = parseMarkdown(acumulado);
                 chatMessages.scrollTop = chatMessages.scrollHeight;
-                wordIndex++;
+                i++;
             } else {
-                clearInterval(interval);
+                clearInterval(intervalo);
                 resolve();
             }
         }, speed);
     });
 }
 
+function criarBalao(tipo, classeExtra) {
+    const div = document.createElement('div');
+    div.classList.add('message', tipo === 'user' ? 'user-message' : 'ia-message');
+    if (classeExtra) div.classList.add(classeExtra);
+    chatMessages.appendChild(div);
+    return div;
+}
 
 // ==========================================
-// 4. MOTOR DE PROCESSAMENTO DE MENSAGENS (ASYNC)
+// 7. DETECÇÃO DE INTENÇÃO (MODO CERTO PARA CADA ASSUNTO)
+// ==========================================
+// Termos com "*" no fim valem como início de palavra; sem "*", só a palavra inteira.
+// (Assim "contexto" não é confundido com "texto", nem "ventilador" com "vent".)
+const montarRegex = (termos) => new RegExp(
+    termos.map(x => x.endsWith('*') ? `\\b${x.slice(0, -1)}\\w*` : `\\b${x}\\b`).join('|'), 'i'
+);
+
+const REGEX_ACADEMICO = montarRegex([
+    'plagio*', 'artigo*', 'tcc', 'paragrafo*', 'texto*', 'academ*', 'faculdade', 'referencia*', 'citacao', 'citacoes', 'resumo*',
+    'plagiarism', 'essay*', 'paper*', 'thesis', 'citation*', 'summar*', 'reference*',
+    'ensayo*', 'tesis', 'cita', 'citas', 'resumen'
+]);
+
+const REGEX_EMOCIONAL = montarRegex([
+    'triste*', 'ansios*', 'ansiedade', 'sobrecarregad*', 'desabaf*', 'cansad*', 'burnout', 'estressad*', 'pressao',
+    'sentimento*', 'emocional', 'depress*', 'chorar', 'me sinto mal',
+    'sad', 'anxious', 'anxiety', 'overwhelm*', 'tired', 'stressed', 'pressure', 'feelings', 'crying',
+    'agobiad*', 'estresad*', 'presion', 'sentimientos', 'desahog*', 'llorar', 'ansiedad'
+]);
+
+// Situação de risco: NUNCA bloqueia nem pede para trocar de modo; vai direto para a IA / CVV
+const REGEX_RISCO = new RegExp([
+    'suicid', 'me matar', 'quero morrer', 'vou me matar', 'acabar com (a )?(minha )?vida', 'tirar (a )?minha vida',
+    'automutila', 'me cortar', 'me machucar', 'nao quero (mais )?viver', 'nao aguento mais viver',
+    'kill myself', 'want to die', 'end my life', 'self[- ]?harm', 'hurt myself', "don'?t want to live",
+    'quiero morir', 'quitarme la vida', 'matarme', 'hacerme dano', 'no quiero vivir'
+].join('|'), 'i');
+
+const semAcentos = (s) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+// ==========================================
+// 8. HISTÓRICO DE CHATS (EM MEMÓRIA + SERVIDOR)
+// ==========================================
+function chatAtual() {
+    return estadoUsuario.chats.find(c => c.id === chatAtualId) || null;
+}
+
+function salvarChats(chats) {
+    estadoUsuario.chats = chats;
+    salvarNoServidor({ chats });
+}
+
+function registrarMensagem(remetente, texto) {
+    const chats = estadoUsuario.chats.slice();
+
+    if (!chatAtualId) {
+        chatAtualId = 'chat_' + Date.now();
+        sessionStorage.setItem('ductorChatAtual', chatAtualId);
+        chats.push({
+            id: chatAtualId,
+            title: texto.length > 22 ? texto.substring(0, 22) + '...' : texto,
+            messages: [{ sender: remetente, text: texto }]
+        });
+    } else {
+        const i = chats.findIndex(c => c.id === chatAtualId);
+        if (i !== -1) {
+            chats[i] = { ...chats[i], messages: [...chats[i].messages, { sender: remetente, text: texto }] };
+        }
+    }
+    salvarChats(chats);
+    renderizarSidebar();
+}
+
+function renderizarSidebar() {
+    historyList.innerHTML = '';
+
+    if (estadoUsuario.chats.length === 0) {
+        const vazio = document.createElement('li');
+        vazio.className = 'history-item empty-history';
+        vazio.style.cssText = 'opacity: 0.6; pointer-events: none; font-size: 0.85rem;';
+        vazio.innerHTML = '<i class="fa-solid fa-folder-open"></i> ';
+        const span = document.createElement('span');
+        span.textContent = t('chat.empty_history');
+        vazio.appendChild(span);
+        historyList.appendChild(vazio);
+        return;
+    }
+
+    estadoUsuario.chats.slice().reverse().forEach(chat => {
+        const li = document.createElement('li');
+        li.className = `history-item ${chat.id === chatAtualId ? 'active' : ''}`;
+        li.dataset.id = chat.id;
+
+        const icone = document.createElement('i');
+        icone.className = 'fa-regular fa-message';
+
+        const titulo = document.createElement('span');
+        titulo.className = 'history-title';
+        titulo.textContent = chat.title; // textContent: título nunca vira HTML
+
+        const btnApagar = document.createElement('button');
+        btnApagar.type = 'button';
+        btnApagar.className = 'delete-chat-btn';
+        btnApagar.title = t('chat.delete_title');
+        btnApagar.setAttribute('aria-label', t('chat.delete_title'));
+        btnApagar.innerHTML = '<i class="fa-solid fa-trash"></i>';
+        btnApagar.addEventListener('click', (e) => {
+            e.stopPropagation();
+            apagarChat(chat.id);
+        });
+
+        li.append(icone, titulo, btnApagar);
+        li.addEventListener('click', () => { carregarChat(chat.id); fecharMenu(); });
+        historyList.appendChild(li);
+    });
+}
+
+function carregarChat(id) {
+    const chat = estadoUsuario.chats.find(c => c.id === id);
+    if (!chat) return;
+    chatAtualId = id;
+    sessionStorage.setItem('ductorChatAtual', id);
+
+    chatMessages.innerHTML = '';
+    chat.messages.forEach(msg => {
+        const balao = criarBalao(msg.sender === 'user' ? 'user' : 'ia');
+        balao.innerHTML = parseMarkdown(msg.text);
+    });
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    renderizarSidebar();
+}
+
+function novoChat() {
+    chatAtualId = null;
+    sessionStorage.removeItem('ductorChatAtual');
+    chatMessages.innerHTML = '';
+    const aviso = criarBalao('ia', 'system-notice');
+    aviso.dataset.i18n = 'chat.reset';
+    aviso.textContent = t('chat.reset');
+    userInput.value = '';
+    userInput.style.height = 'auto';
+    userInput.focus();
+    renderizarSidebar();
+}
+
+async function apagarChat(id) {
+    if (!(await confirmar(t('chat.delete_confirm')))) return;
+    salvarChats(estadoUsuario.chats.filter(c => c.id !== id));
+    if (id === chatAtualId) novoChat();
+    else renderizarSidebar();
+}
+
+newChatBtn.addEventListener('click', () => { novoChat(); fecharMenu(); });
+
+// ==========================================
+// 9. ENVIO DE MENSAGENS
 // ==========================================
 chatForm.addEventListener('submit', async function (event) {
     event.preventDefault();
 
     const messageText = userInput.value.trim();
+    if (messageText === '' || aguardandoResposta) return;
+    if (!estadoUsuario.carregado) return; // só conversa depois de carregar os dados do servidor
 
-    if (messageText === '') {
-        return;
+    const currentMode = $('current-ai-mode').value;
+    const texto = semAcentos(messageText);
+    const emRisco = REGEX_RISCO.test(texto);
+
+    const limparCampo = () => { userInput.value = ''; userInput.style.height = 'auto'; };
+
+    // Avisos de modo (não se aplicam a situações de risco: nesses casos a IA sempre responde)
+    if (!emRisco) {
+        let aviso = null;
+        if (currentMode === 'emotional' && REGEX_ACADEMICO.test(texto)) aviso = t('warn.academic_in_emotional');
+        if (currentMode === 'academic' && REGEX_EMOCIONAL.test(texto)) aviso = t('warn.emotional_in_academic');
+
+        if (aviso) {
+            const avisoDiv = criarBalao('ia', 'system-notice');
+            limparCampo();
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            await streamResponseEffect(avisoDiv, aviso, 20);
+            return;
+        }
     }
 
-    // 📍 [NOVO] FILTRO DE VALIDAÇÃO DE INTENÇÃO (ACADÊMICO VS EMOCIONAL)
-    const currentMode = document.getElementById('current-ai-mode').value;
-    const termosAcademicos = ['plagio', 'plágio', 'artigo', 'tcc', 'paragrafo', 'texto', 'academico', 'faculdade', 'referencia', 'citacao', 'resumo'];
-    const termosEmocionais = ['triste', 'ansioso', 'ansiedade', 'sobrecarregado', 'desabafo', 'mal', 'cansado', 'burnout', 'estressado', 'pressao', 'sentimento', 'emocional'];
-    
-    // Deixa o texto limpo (sem acentos e minúsculo) para evitar que o aluno drible o filtro
-    const textoMinusculo = messageText.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    // Histórico enviado à IA = mensagens salvas deste chat (texto original, sem perder quebras de linha)
+    const historico = (chatAtual() ? chatAtual().messages : []).map(m => ({
+        role: m.sender === 'user' ? 'user' : 'assistant',
+        content: m.text
+    }));
 
-    // Caso A: Está no modo Emocional, mas digitou algo Acadêmico
-    if (currentMode === 'emotional' && termosAcademicos.some(termo => textoMinusculo.includes(termo))) {
-        const avisoDiv = document.createElement('div');
-        avisoDiv.classList.add('message', 'ia-message');
-        chatMessages.appendChild(avisoDiv);
-        userInput.value = '';
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-        
-        // Usa o seu efeito de digitação real para dar o aviso
-        await streamResponseEffect(avisoDiv, '⚠️ **Aviso do Guia:** Identifiquei que sua dúvida é de cunho acadêmico. Para que eu possa analisar textos, verificar plágios ou ajudar nos seus estudos com total rigor, por favor, **selecione a opção "Rigor Acadêmico"** logo abaixo.', 20);
-        return; // Para o código aqui e impede o envio para o servidor/fallback
-    }
+    // Mensagem do aluno
+    const userDiv = criarBalao('user');
+    userDiv.textContent = messageText;
+    limparCampo();
+    registrarMensagem('user', messageText);
 
-    // Caso B: Está no modo Acadêmico, mas digitou algo Emocional
-    if (currentMode === 'academic' && termosEmocionais.some(termo => textoMinusculo.includes(termo))) {
-        const avisoDiv = document.createElement('div');
-        avisoDiv.classList.add('message', 'ia-message');
-        chatMessages.appendChild(avisoDiv);
-        userInput.value = '';
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-        
-        // Usa o seu efeito de digitação real para dar o aviso
-        await streamResponseEffect(avisoDiv, '⚠️ **Aviso do Guia:** Sinto que você precisa de um espaço para desabafar ou falar sobre a pressão dos estudos. Para conversarmos sobre seus sentimentos e organizarmos sua mente de forma acolhedora, **selecione a opção "Suporte Emocional"** logo abaixo.', 20);
-        return; // Para o código aqui e impede o envio para o servidor/fallback
-    }
-    // 📍 FIM DO FILTRO DE VALIDAÇÃO
-
-    // --- PASSO A: INJETAR MENSAGEM DO USUÁRIO NA TELA ---
-    const userMessageDiv = document.createElement('div');
-    userMessageDiv.classList.add('message', 'user-message');
-    userMessageDiv.textContent = messageText;
-    chatMessages.appendChild(userMessageDiv);
-    
-    userInput.value = '';
+    // Balão da IA
+    const iaDiv = criarBalao('ia');
+    iaDiv.textContent = t('chat.thinking');
     chatMessages.scrollTop = chatMessages.scrollHeight;
 
-    // GATILHO DO HISTÓRICO: Salva a pergunta do Aluno na barra lateral
-    if (window.salvarInteracaoNoHistorico) {
-        window.salvarInteracaoNoHistorico('user', messageText);
-    }
-
-   // --- PASSO B: CRIAR BALÃO DE CARREGAMENTO DA IA ---
-    const iaMessageDiv = document.createElement('div');
-    iaMessageDiv.classList.add('message', 'ia-message');
-    iaMessageDiv.textContent = 'Ductor AI está processando sua solicitação...';
-    chatMessages.appendChild(iaMessageDiv);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-
+    aguardandoResposta = true;
     sendBtn.disabled = true;
 
-        // ─── 🧠 [CORRIGIDO PARA GROQ] CAPTURA DA MEMÓRIA DO CHAT ───
-    const divMensagens = chatMessages.querySelectorAll('.message');
-    const chatHistory = [];
-    
-    divMensagens.forEach(div => {
-        if (div === iaMessageDiv || div === userMessageDiv) return;
-        
-        if (div.classList.contains('user-message')) {
-            // Padrão Groq: role 'user' e texto em 'content'
-            chatHistory.push({ role: 'user', content: div.textContent.trim() });
-        } else if (div.classList.contains('ia-message')) {
-            if (div.textContent.includes('Área de conversação reiniciada') || div.textContent.includes('⚠️')) return;
-            // Padrão Groq: role 'assistant' e texto em 'content'
-            chatHistory.push({ role: 'assistant', content: div.textContent.trim() });
-        }
-    });
-    // ───────────────────────────────────────────────────────────
-
-    // --- PASSO C: REQUISIÇÃO PARA O BACKEND COM MEMÓRIA INTEGRADA ---
     try {
-        const response = await fetch(BACKEND_API_URL, {
+        const response = await authFetch(BACKEND_API_URL, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ 
+            body: JSON.stringify({
                 message: messageText,
-                history: chatHistory, // 👈 Enviando todo o histórico do chat aqui!
-                studentName: localStorage.getItem('userName') || "Estudante",
-                timestamp: new Date().toISOString()
+                history: historico,
+                mode: currentMode,
+                language: window.i18n.idioma()
             })
         });
-        if (response.ok) {
-            const data = await response.json();
-            const realAiText = data.response || data.text || data.message || data.conteudo;
-            
-            // Renderiza com espaçamento profissional e negritos interpretados
-            await streamResponseEffect(iaMessageDiv, realAiText, 25);
-            
-            // GATILHO DO HISTÓRICO - ONLINE: Salva a resposta vinda do Servidor
-            if (window.salvarInteracaoNoHistorico) {
-                window.salvarInteracaoNoHistorico('ia', realAiText);
-            }
+        const data = await response.json().catch(() => ({}));
 
-            sendBtn.disabled = false;
-            userInput.focus();
-            return;
-        }
-        
-        throw new Error('Servidor indisponível no momento.');
-
-    } catch (error) {
-        console.warn("Conexão direta offline. Rodando motor de contingência formatado.");
-        
-        setTimeout(() => {
-            let respostaFallback = "";
-            const textoLimpo = messageText.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-
-            if (textoLimpo.includes('agua') || textoLimpo.includes('derrubei') || textoLimpo.includes('computador')) {
-                respostaFallback = `Ai meu Deus, respira fundo! Acidentes acontecem e o pânico não vai ajudar agora.\n\n` +
-                                   `Aqui está o que você precisa fazer **imediatamente**:\n` +
-                                   `* **1. Desligue tudo:** Tire o aparelho da tomada e não tente ligá-lo de jeito nenhum.\n` +
-                                   `* **2. Seja honesto:** Procure o responsável pelo laboratório ou seu professor agora mesmo.\n\n` +
-                                   `Equipamentos são substituíveis, sua integridade não. Quer ajuda para pensar em como falar com a direção?`;
-            } else if (textoLimpo === 'oi' || textoLimpo === 'ola') {
-                respostaFallback = "Olá!\n\nComo posso apoiar sua rotina, tirar dúvidas de matérias ou te dar um suporte emocional hoje? Estou aqui para o que der e vier.";
-            } else {
-                respostaFallback = `Compreendo sua preocupação sobre **"${messageText}"**.\n\n` +
-                                   `Lidar com imprevistos práticos ou acadêmicos exige calma.\n\n` +
-                                   `Para podermos resolver isso juntos: qual é o seu maior medo ou dúvida sobre isso agora? Me conta os detalhes!`;
-            }
-
-            streamResponseEffect(iaMessageDiv, respostaFallback, 25).then(() => {
-                // GATILHO DO HISTÓRICO - OFFLINE: Salva a resposta gerada no Fallback local
-                if (window.salvarInteracaoNoHistorico) {
-                    window.salvarInteracaoNoHistorico('ia', respostaFallback);
-                }
-
-                sendBtn.disabled = false;
-                userInput.focus();
-            });
-
-        }, 600);
-    }
-});
-
-// ==========================================
-// 5. GERENCIAMENTO DE MODAIS (INTERFACE)
-// ==========================================
-settingsBtn.addEventListener('click', () => settingsModal.classList.add('open'));
-closeSettingsBtn.addEventListener('click', () => settingsModal.classList.remove('open'));
-
-profileBtn.addEventListener('click', () => profileModal.classList.add('open'));
-closeProfileBtn.addEventListener('click', () => profileModal.classList.remove('open'));
-
-window.addEventListener('click', function (event) {
-    if (event.target === settingsModal) {
-        settingsModal.classList.remove('open');
-    }
-    if (event.target === profileModal) {
-        profileModal.classList.remove('open');
-    }
-});
-
-
-// ==========================================
-// 6. CONTROLE DE ACESSIBILIDADE E TEMAS
-// ==========================================
-themeSelector.addEventListener('change', function () {
-    if (themeSelector.value === 'light') {
-        document.body.classList.add('light-theme');
-    } else {
-        document.body.classList.remove('light-theme');
-    }
-});
-
-fontSizeSelector.addEventListener('change', function () {
-    if (fontSizeSelector.value === 'large') {
-        document.body.classList.add('font-large');
-    } else {
-        document.body.classList.remove('font-large');
-    }
-});
-
-
-// ==========================================
-// 7. SISTEMA DE HISTÓRICO DINÂMICO E PERFIL (PREMIUM)
-// ==========================================
-document.addEventListener('DOMContentLoaded', () => {
-    // --- CONTROLE DE USUÁRIO E PERFIL ---
-    const nomeCompleto = localStorage.getItem('userName');
-    const userEmail = localStorage.getItem('userEmail') || 'anonimo';
-    
-    const displayNomeSidebar = document.getElementById('user-display-name');
-    const displayNomeModal = document.getElementById('modal-profile-name');
-    const avatarSidebar = document.getElementById('profile-avatar');
-    const avatarModal = document.getElementById('modal-profile-avatar');
-    const changePhotoText = document.getElementById('change-photo-text');
-    const fileInput = document.getElementById('avatar-upload-input');
-
-    if (nomeCompleto) {
-        const primeiroNome = nomeCompleto.trim().split(' ')[0];
-        if (displayNomeSidebar) displayNomeSidebar.textContent = primeiroNome;
-        if (displayNomeModal) displayNomeModal.textContent = nomeCompleto;
-    }
-
-    function aplicarFotoPerfil(base64Image) {
-        if (!base64Image) return;
-        const imgHTML = `<img src="${base64Image}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block;">`;
-        if (avatarSidebar) avatarSidebar.innerHTML = imgHTML;
-        if (avatarModal) avatarModal.innerHTML = imgHTML;
-    }
-    
-    const fotoSalva = localStorage.getItem('userAvatar');
-    if (fotoSalva) aplicarFotoPerfil(fotoSalva);
-
-    if (avatarModal && fileInput) {
-        const acionarUpload = () => fileInput.click();
-        avatarModal.addEventListener('click', acionarUpload);
-        if (changePhotoText) changePhotoText.addEventListener('click', acionarUpload);
-    }
-
-    if (fileInput) {
-        fileInput.addEventListener('change', (event) => {
-            const arquivo = event.target.files[0];
-            if (arquivo && arquivo.type.startsWith('image/')) {
-                const leitor = new FileReader();
-                leitor.onload = (e) => {
-                    localStorage.setItem('userAvatar', e.target.result);
-                    aplicarFotoPerfil(e.target.result);
-                };
-                leitor.readAsDataURL(arquivo);
-            }
-        });
-    }
-
-    // --- MOTOR DE HISTÓRICO DINÂMICO (BALÕES DE CONVERSA) ---
-    const historyList = document.getElementById('chat-history-list');
-    let currentChatId = null;
-    const STORAGE_KEY = `ductor_chats_${userEmail}`;
-
-    function carregarTodosOsChats() {
-        const dados = localStorage.getItem(STORAGE_KEY);
-        return dados ? JSON.parse(dados) : [];
-    }
-
-    function salvarTodosOsChats(chats) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(chats));
-    }
-
-    function renderizarSidebar() {
-        if (!historyList) return;
-        historyList.innerHTML = '';
-        const chats = carregarTodosOsChats();
-
-        if (chats.length === 0) {
-            historyList.innerHTML = `<li class="history-item empty-history" style="opacity: 0.6; pointer-events: none; font-size: 0.85rem;"><i class="fa-solid fa-folder-open"></i> Nenhum chat ainda</li>`;
+        if (!response.ok || !data.response) {
+            await streamResponseEffect(iaDiv, `⚠️ ${tErro(data)}`, 15);
             return;
         }
 
-        chats.reverse().forEach(chat => {
-            const li = document.createElement('li');
-            li.className = `history-item ${chat.id === currentChatId ? 'active' : ''}`;
-            li.setAttribute('data-id', chat.id);
-            li.innerHTML = `<i class="fa-regular fa-message"></i> ${chat.title}`;
-            
-            li.addEventListener('click', () => {
-                carregarChatEspecifico(chat.id);
-            });
+        await streamResponseEffect(iaDiv, data.response, 20);
+        registrarMensagem('ia', data.response);
 
-            historyList.appendChild(li);
-        });
+    } catch (erro) {
+        if (erro.message === 'session_expired') return;
+        console.error('Erro na comunicação com o servidor:', erro);
+        await streamResponseEffect(iaDiv, t('chat.conn_error'), 15);
+    } finally {
+        aguardandoResposta = false;
+        sendBtn.disabled = !estadoUsuario.carregado;
+        userInput.focus();
     }
+});
 
-    function carregarChatEspecifico(id) {
-        currentChatId = id;
-        const chats = carregarTodosOsChats();
-        const chatAlvo = chats.find(c => c.id === id);
+// ==========================================
+// 10. MODOS DA IA (ACADÊMICO / EMOCIONAL)
+// ==========================================
+function selecionarModo(modo) {
+    $('current-ai-mode').value = modo;
+    $('mode-academic').classList.toggle('active', modo === 'academic');
+    $('mode-emotional').classList.toggle('active', modo === 'emotional');
+}
+$('mode-academic').addEventListener('click', () => selecionarModo('academic'));
+$('mode-emotional').addEventListener('click', () => selecionarModo('emotional'));
 
-        if (chatAlvo && chatMessages) {
-            chatMessages.innerHTML = '';
-            
-            chatAlvo.messages.forEach(msg => {
-                const msgDiv = document.createElement('div');
-                msgDiv.className = `message ${msg.sender === 'user' ? 'user-message' : 'ia-message'}`;
-                msgDiv.innerHTML = msg.text.replace(/\n/g, '<br>');
-                chatMessages.appendChild(msgDiv);
-            });
-            
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-            
-            document.querySelectorAll('.history-item').forEach(item => {
-                item.classList.remove('active');
-                if (item.getAttribute('data-id') === id) item.classList.add('active');
-            });
-        }
-    }
+// ==========================================
+// 11. MODAIS, MENU LATERAL (CELULAR) E ATALHOS
+// ==========================================
+const abrirModal = (m) => { m.classList.add('open'); };
+const fecharModal = (m) => { m.classList.remove('open'); };
 
-    window.salvarInteracaoNoHistorico = function(remetente, texto) {
-        let chats = carregarTodosOsChats();
+$('settings-btn').addEventListener('click', () => abrirModal(settingsModal));
+$('close-settings-btn').addEventListener('click', () => fecharModal(settingsModal));
+$('profile-btn').addEventListener('click', () => { atualizarBotaoRemoverFoto(); abrirModal(profileModal); });
+$('close-profile-btn').addEventListener('click', () => fecharModal(profileModal));
 
-        if (!currentChatId) {
-            currentChatId = 'chat_' + Date.now();
-            let tituloDefinido = texto.length > 22 ? texto.substring(0, 22) + '...' : texto;
-            
-            const novoChat = {
-                id: currentChatId,
-                title: tituloDefinido,
-                messages: [{ sender: remetente, text: texto }]
-            };
-            chats.push(novoChat);
-        } else {
-            const chatIndex = chats.findIndex(c => c.id === currentChatId);
-            if (chatIndex !== -1) {
-                chats[chatIndex].messages.push({ sender: remetente, text: texto });
-            }
-        }
+[settingsModal, profileModal].forEach(m => m.addEventListener('click', (e) => { if (e.target === m) fecharModal(m); }));
 
-        salvarTodosOsChats(chats);
-        renderizarSidebar();
-    };
+document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if ($('crop-modal').classList.contains('open') || $('confirm-modal').classList.contains('open')) return; // esses têm o próprio Esc
+    fecharModal(settingsModal);
+    fecharModal(profileModal);
+    fecharMenu();
+});
 
-    if (newChatBtn) {
-        newChatBtn.addEventListener('click', function () {
-            currentChatId = null;
-            document.querySelectorAll('.history-item').forEach(i => i.classList.remove('active'));
-            
-            if (chatMessages) {
-                chatMessages.innerHTML = `
-                    <div class="message ia-message">
-                        Área de conversação reiniciada. O espaço é seu! Pode mandar qualquer dúvida de matéria, desabafo ou situação imprevista.
-                    </div>
-                `;
-            }
-            if (userInput) userInput.focus();
-            renderizarSidebar();
-        });
-    }
+function abrirMenu() { sidebar.classList.add('open'); sidebarBackdrop.classList.add('show'); }
+function fecharMenu() { sidebar.classList.remove('open'); sidebarBackdrop.classList.remove('show'); }
+$('menu-toggle').addEventListener('click', () => (sidebar.classList.contains('open') ? fecharMenu() : abrirMenu()));
+sidebarBackdrop.addEventListener('click', fecharMenu);
 
-    // Configuração do botão de sair (Logout)
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', function () {
-            alert('Sessão encerrada com segurança! Até logo.');
-            // Opcional: Você pode redirecionar para a tela de login aqui
-            window.location.href = 'login.html';
-        });
-    }
+logoutBtn.addEventListener('click', encerrarSessaoLocal);
 
+// ==========================================
+// 12. PREFERÊNCIAS (TEMA, FONTE, IDIOMA) - SALVAS POR USUÁRIO
+// ==========================================
+function aplicarConfiguracoes(config) {
+    document.body.classList.toggle('light-theme', config.theme === 'light');
+    document.body.classList.toggle('font-large', config.fontSize === 'large');
+    themeSelector.value = config.theme;
+    fontSizeSelector.value = config.fontSize;
+    if (config.language) languageSelector.value = config.language;
+}
+
+function alterouPreferencia() {
+    aplicarConfiguracoes(estadoUsuario.settings);
+    salvarNoServidor({ settings: estadoUsuario.settings });
+}
+
+themeSelector.addEventListener('change', () => {
+    estadoUsuario.settings.theme = themeSelector.value === 'light' ? 'light' : 'dark';
+    alterouPreferencia();
+});
+
+fontSizeSelector.addEventListener('change', () => {
+    estadoUsuario.settings.fontSize = fontSizeSelector.value === 'large' ? 'large' : 'normal';
+    alterouPreferencia();
+});
+
+languageSelector.addEventListener('change', () => {
+    const novo = languageSelector.value;
+    estadoUsuario.settings.language = novo;
+    window.i18n.definirIdioma(novo); // traduz a tela na hora
+    alterouPreferencia();
+});
+
+// Ao trocar o idioma, refaz os textos montados por código
+document.addEventListener('idioma-alterado', () => {
     renderizarSidebar();
+    if (!estadoUsuario.carregado) return;
+    const nome = localStorage.getItem('userName');
+    if (nome) displayNomeSidebar.textContent = nome.trim().split(' ')[0];
 });
 
-console.log("Motor de estilização e renderização Ductor AI calibrado com Histórico Dinâmico.");
+// ==========================================
+// 13. FOTO DE PERFIL (COM RECORTE E PRÉ-VISUALIZAÇÃO)
+// ==========================================
+function aplicarFotoPerfil(src) {
+    [avatarSidebar, avatarModal].forEach(el => {
+        el.textContent = '';
+        if (!src) {
+            el.textContent = '👤';
+            return;
+        }
+        const img = document.createElement('img');
+        img.src = src;
+        img.alt = '';
+        img.style.cssText = 'width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block;';
+        el.appendChild(img);
+    });
+    atualizarBotaoRemoverFoto();
+}
+
+function atualizarBotaoRemoverFoto() {
+    removePhotoBtn.hidden = !estadoUsuario.avatar;
+}
+
+const escolherFoto = () => fileInput.click();
+avatarModal.addEventListener('click', escolherFoto);
+$('change-photo-text').addEventListener('click', escolherFoto);
+
+fileInput.addEventListener('change', async (event) => {
+    const arquivo = event.target.files[0];
+    fileInput.value = ''; // permite escolher a mesma foto outra vez
+    if (!arquivo || !estadoUsuario.carregado) return;
+
+    try {
+        const foto = await window.abrirCropper(arquivo); // abre o recorte; null = cancelou
+        if (!foto) return;
+        estadoUsuario.avatar = foto;
+        aplicarFotoPerfil(foto);
+        salvarNoServidor({ avatar: foto });
+    } catch (erro) {
+        mostrarToast(t(erro.i18nKey || 'crop.error'), 'error');
+    }
+});
+
+removePhotoBtn.addEventListener('click', () => {
+    estadoUsuario.avatar = null;
+    aplicarFotoPerfil(null);
+    salvarNoServidor({ avatar: null });
+});
 
 // ==========================================
-// CONTROLADOR DE MODOS DINÂMICOS DA IA
+// 14. INICIALIZAÇÃO: BAIXA OS DADOS DESTE USUÁRIO
 // ==========================================
-function selectAiMode(mode) {
-    const academicBtn = document.getElementById('mode-academic');
-    const emotionalBtn = document.getElementById('mode-emotional');
-    const modeInput = document.getElementById('current-ai-mode');
-    
-    // Remove o acesos de ambos
-    academicBtn.classList.remove('active');
-    emotionalBtn.classList.remove('active');
-    
-    // Acende apenas o botão clicado
-    if (mode === 'academic') {
-        academicBtn.classList.add('active');
-        modeInput.value = 'academic';
-    } else {
-        emotionalBtn.classList.add('active');
-        modeInput.value = 'emotional';
+async function iniciarApp() {
+    sendBtn.disabled = true;
+    try {
+        const resposta = await authFetch(`${API_BASE}/me/data`);
+        if (!resposta.ok) throw new Error(`Erro ${resposta.status}`);
+        const dados = await resposta.json();
+
+        estadoUsuario.chats = Array.isArray(dados.chats) ? dados.chats : [];
+        estadoUsuario.avatar = dados.avatar || null;
+        estadoUsuario.settings = {
+            theme: dados.settings && dados.settings.theme === 'light' ? 'light' : 'dark',
+            fontSize: dados.settings && dados.settings.fontSize === 'large' ? 'large' : 'normal',
+            language: dados.settings && window.i18n.IDIOMAS.includes(dados.settings.language) ? dados.settings.language : null
+        };
+        estadoUsuario.carregado = true;
+
+        localStorage.setItem('userName', dados.name);
+        localStorage.setItem('userEmail', dados.email);
+        displayNomeSidebar.textContent = dados.name.trim().split(' ')[0];
+        displayNomeModal.textContent = dados.name;
+
+        // Conta nova (sem idioma salvo): usa o idioma que a pessoa já estava vendo e grava
+        if (estadoUsuario.settings.language) {
+            window.i18n.definirIdioma(estadoUsuario.settings.language);
+        } else {
+            estadoUsuario.settings.language = window.i18n.idioma();
+            salvarNoServidor({ settings: estadoUsuario.settings });
+        }
+
+        aplicarConfiguracoes(estadoUsuario.settings);
+        aplicarFotoPerfil(estadoUsuario.avatar);
+        renderizarSidebar();
+        sendBtn.disabled = false;
+
+        // Se a página recarregou no meio de uma conversa, volta para o mesmo chat (em vez de abrir um novo)
+        const chatSalvo = sessionStorage.getItem('ductorChatAtual');
+        if (chatSalvo && estadoUsuario.chats.some(c => c.id === chatSalvo)) carregarChat(chatSalvo);
+    } catch (erro) {
+        if (erro.message === 'session_expired') return;
+        console.error('Erro ao carregar os dados do usuário:', erro);
+        displayNomeSidebar.textContent = t('sidebar.offline');
+        const aviso = criarBalao('ia', 'system-notice');
+        aviso.textContent = t('chat.load_error');
     }
 }
+
+iniciarApp();
