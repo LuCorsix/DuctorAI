@@ -424,7 +424,7 @@ body {
     display: none;
     align-items: center;
     justify-content: center;
-    z-index: 999;
+    z-index: 1300; /* acima do menu lateral no celular (1200), para abrir Perfil/Opções sem precisar fechar o menu antes */
 }
 
 .modal-overlay.open {
