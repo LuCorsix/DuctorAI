@@ -1,0 +1,20 @@
+# Dependências
+node_modules/
+
+# Segredos (NUNCA publique)
+.env
+.env.local
+
+# Dados dos usuários (NUNCA publique)
+usuarios.json
+dados_usuarios/
+ductor-ai-dados/
+*.db
+*.db-journal
+*.sqlite
+*.tmp
+
+# Sistema e logs
+.DS_Store
+Thumbs.db
+npm-debug.log*

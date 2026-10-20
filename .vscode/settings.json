@@ -1,0 +1,9 @@
+{
+  "liveServer.settings.ignoreFiles": [
+    ".vscode/**",
+    "dados_usuarios/**",
+    "usuarios.json",
+    "**/*.tmp",
+    "node_modules/**"
+  ]
+}
